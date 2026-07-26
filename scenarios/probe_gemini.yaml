@@ -1,0 +1,41 @@
+# Two-period vendor shakedown on Gemini 3.5 Flash via Vertex AI (ADC auth).
+#
+# Thinking is OFF: measured on this model, thinking_level="minimal" reports no
+# thoughts_token_count at all and answers in ~0.9s against 404 thinking tokens when unset.
+# Unlike Gemini 3.0, it really can be turned off here.
+#
+# Caching does not apply: implicit caching needs 4,096 input tokens on Gemini 3.x and a
+# turn prompt here is ~2,300, so every call bills at the full input rate.
+run_name: probe_gemini
+seed: 20250725
+sequence_preset: probe_none_then_insider
+sessions: 1
+periods: 2
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true
+  announce_no_info_period: false
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+
+agents:
+  - kind: llm
+    model: gemini-3.5-flash            # a gemini-* model routes to Vertex; base_url unused
+    temperature: 0.7
+    thinking: false
+    broadcast_thinking: false
+    reflect_thinking: false
+    max_output_tokens: 8192
+    broadcast_max_output_tokens: 512
+    reflect_max_output_tokens: 3000
+
+# Vertex AI, Gemini 3.5 Flash, Standard tier, GLOBAL location. Reasoning bills as output.
+pricing:
+  input_per_mtok: 1.50
+  cached_input_per_mtok: 0.15
+  output_per_mtok: 9.00

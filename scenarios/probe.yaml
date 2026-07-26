@@ -1,0 +1,45 @@
+# One year, one round: the smallest run that still exercises every channel.
+#
+# Twelve turn decisions run strictly serially at roughly 25s each, so this is the floor
+# for a real-API check — about eight minutes. Year 1 is a NO-INFORMATION period, which is
+# the sharpest test of the arithmetic: with every clue card blank, an agent has nothing to
+# work from but the bingo cage, so a stated expected value is right (220 / 210 / 155) only
+# if it actually derived 16-of-40 rather than falling back on 50/50 (250 / 225 / 150).
+run_name: probe
+seed: 20250725
+sequence_preset: paper_exact
+sessions: 1
+periods: 1
+max_rounds_per_period: 1
+
+rules:
+  price_improvement: true
+  announce_no_info_period: false
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    temperature: 0.7
+    thinking: true
+    broadcast_thinking: true
+    reflect_thinking: true
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing. Measured reasoning
+    # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
+    max_output_tokens: 8192
+    broadcast_max_output_tokens: 512
+    # Reasoning draws on the same budget, so the old 400 would spend itself thinking and
+    # truncate the note away.
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.28
+  cached_input_per_mtok: 0.028
+  output_per_mtok: 0.42

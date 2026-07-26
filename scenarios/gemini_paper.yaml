@@ -1,0 +1,71 @@
+# Gemini 3.5 Flash via Vertex AI, thinking OFF on all four channels.
+#
+# Seeds are shared with the DeepSeek batch so both vendors face the SAME market:
+# same drawn sequence, same round order, same tie-breaks, same seat->name map.
+# Any difference in outcome is then the model, not the draw.
+#
+# Measured on this model: thinking_level="minimal" reports no thoughts_token_count
+# at all (404 tokens and 3.5s when unset), so it really is off — unlike Gemini 3.0.
+# Implicit caching needs 4,096 input tokens on Gemini 3.x and a turn prompt here is
+# ~2,300, so every call bills at the full input rate. That is why this arm costs
+# roughly seven times the DeepSeek one.
+#
+# Main experiment: Plott & Sunder (1982) market 3, exactly as Table 1 records it.
+#   states  Y Y Y X Y Y X Y X Y Y X
+#   info    none none | insider x8 | all all
+# Only periods 3-10 separate the two models, and only the five Y periods among them
+# (3, 5, 6, 8, 10) carry identifying power.
+run_name: gemini_paper
+seed: 20250725
+sequence_preset: paper_exact
+sessions: 1
+max_rounds_per_period: 3
+# Vertex serves gemini-3.5-flash from a DYNAMIC SHARED QUOTA: there is no per-project
+# limit to raise, so a 429 means the shared pool is saturated and the only lever is to
+# ask for less. A first attempt at W=12 took 54 retries in 75 calls, exhausted the retry
+# budget 9 times and turned 5 turns into violations — an agent skipping a turn because
+# of an API failure is corrupted data, not a decision, so that run was discarded.
+# W=2 with a slower pace and a deeper retry budget; run the two Gemini sessions one at a
+# time, never together.
+broadcast_workers: 2
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # faithful: market 3's subjects were not told
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: gemini-3.5-flash
+    temperature: 0.7
+    thinking: false
+    broadcast_thinking: false
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing. Measured reasoning
+    # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
+    max_output_tokens: 8192
+    broadcast_max_output_tokens: 512
+    reflect_thinking: false
+    # Reasoning shares this budget. At 400 (and even at 1200) the note itself was
+    # truncated away: 6 of 12 year-end notes came back empty on the probe run.
+    reflect_max_output_tokens: 3000
+    # Shared-quota 429s are not a burst that clears in seconds; the pool stays saturated.
+    # A 5-retry budget (<=62s) was exhausted 9 times in 75 calls. 8 retries reaches ~8.5
+    # minutes worst case, which is a long stall but the alternative is a violation — and
+    # a violation is a data point that says the agent chose to pass when it did not.
+    max_retries: 8
+    pace: 1.0
+
+pricing:
+  input_per_mtok: 1.50
+  cached_input_per_mtok: 0.15
+  output_per_mtok: 9.00

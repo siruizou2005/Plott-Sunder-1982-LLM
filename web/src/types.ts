@@ -1,0 +1,97 @@
+export type Side = 'bid' | 'ask'
+export type InfoCond = 'none' | 'insider' | 'all'
+
+/** One line of the JSONL log, unchanged from what the Python engine wrote. */
+export interface Ev {
+  event_id: number
+  session: number
+  period: number
+  round: number
+  type: string
+  seat: string | null
+  agent_visible: boolean
+  payload: any
+  ts: string
+}
+
+export interface QuoteT { seat: string; side: Side; price: number; posted_at?: number }
+export interface BookT { bid: QuoteT | null; ask: QuoteT | null; spread: number | null }
+
+/**
+ * One step of the timeline, computed server-side in web/server/timeline.js. A step is a
+ * TURN — everything one agent did and everything that happened because of it — not a
+ * single event, which is what made a turn impossible to read whole.
+ */
+export type TurnKind =
+  | 'turn' | 'session_open' | 'period_open' | 'round_open'
+  | 'period_close' | 'period_reflect' | 'session_close'
+
+export interface Turn {
+  kind: TurnKind
+  period: number
+  round: number
+  /** The seat's position in this round's speaking order, 1-based; 0 when unknown. */
+  seq: number
+  seat: string | null
+  /** Inclusive event-index range this step covers. */
+  from: number
+  to: number
+  /** Event indices worth stopping on inside the turn (excludes model_turn / book). */
+  subs: number[]
+}
+
+export interface PeriodMark { period: number; step: number }
+
+export interface SeatState {
+  seat: string
+  type: string
+  certs: number
+  cash: number
+  card: string | null
+  cumulative: number
+  lastProfit: number | null
+  /** Fixed for the whole session and never visible to any agent — audience-only. */
+  insider: boolean
+}
+
+/** What a seat did in the current round, for the round strip. */
+export type RoundOutcome = 'traded' | 'posted' | 'no_quote' | 'violation'
+
+export interface TradeT {
+  buyer: string; seller: string; price: number; trigger: string
+  global_seq: number; period: number
+}
+
+export interface RunInfo {
+  runId: string
+  name: string
+  /** Subdirectory the run sits in — 'm3', 'baselines', … — or null for a flat run. */
+  group: string | null
+  stamp: string
+  bytes: number
+  mtime: number
+  hasMetrics: boolean
+  sequence: string | null
+  agentKinds: string[]
+  sessions: number | null
+  totals: { calls: number; cost_usd: number; wall_clock_s: number } | null
+}
+
+/** The seat colours: one hue family per dividend type, so the visualisation reads as one
+ *  system. Type I is the high-X type, type III the high-Y type. */
+export const TYPE_COLOR: Record<string, string> = {
+  I: '#4f7cff',
+  II: '#8b5cf6',
+  III: '#e0803c',
+}
+
+export const STATE_TINT: Record<string, string> = {
+  X: 'rgba(79,124,255,0.10)',
+  Y: 'rgba(224,128,60,0.10)',
+}
+
+/** The same two hues at chip strength, for the period-jump buttons. */
+export const STATE_TINT_SOLID: Record<string, string> = {
+  X: 'rgba(79,124,255,0.28)',
+  Y: 'rgba(224,128,60,0.28)',
+}

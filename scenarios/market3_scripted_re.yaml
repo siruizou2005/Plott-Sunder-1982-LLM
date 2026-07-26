@@ -1,0 +1,21 @@
+# Engine correctness gate. A market of RE agents MUST converge to 400 in X
+# periods and 175 in Y periods, with certificates in the RE-predicted hands.
+# If it does not, the bug is in the engine, not in the LLM. Run this first.
+run_name: scripted_re
+seed: 20250725
+sequence_preset: paper_exact
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # faithful: market 3's subjects were not told
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: re
+

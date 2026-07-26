@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ps1982"
+version = "0.1.0"
+description = "Plott & Sunder (1982) Market 3 replication with LLM agents"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "typer>=0.12",
+    "rich>=13.7",
+    "jsonschema>=4.21",
+    "openai>=1.40.0",
+  "google-genai>=2.0",   # Gemini on Vertex AI; unused unless a scenario names a gemini-* model
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+ps1982 = "ps1982.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ps1982"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

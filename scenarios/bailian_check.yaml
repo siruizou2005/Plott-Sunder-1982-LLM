@@ -1,0 +1,50 @@
+# Same model, different vendor: deepseek-v4-flash through Bailian's OpenAI-compatible
+# endpoint instead of DeepSeek's own API. Everything else matches the main experiment —
+# thinking on across all four channels — so a difference in outcome is a difference in
+# serving, not in configuration.
+#
+# Two periods, three rounds, identical to the Gemini shakedown:
+#   year 1: no information, state X -> both models say 220
+#   year 2: six insiders, state Y   -> RE 175 vs PI 220, the separating cell
+run_name: bailian_check
+seed: 20250725
+sequence_preset: probe_none_then_insider
+sessions: 1
+periods: 2
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true
+  announce_no_info_period: false
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    # The whole vendor switch. Verified: Bailian honours DeepSeek's
+    # extra_body={"thinking": {...}} toggle and returns reasoning_content, so the provider
+    # class, the prompts and the engine are untouched.
+    base_url: $DASHSCOPE_BASE_URL
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true
+    broadcast_thinking: true
+    reflect_thinking: true
+    max_output_tokens: 8192
+    broadcast_max_output_tokens: 512
+    reflect_max_output_tokens: 3000
+
+# Bailian, deepseek-v4-flash, 华北2 (Beijing): CNY 1 / 2 per million in and out, output
+# including the chain of thought (help.aliyun.com/zh/model-studio/model-pricing). Cached
+# input bills at 20% of input for Bailian-hosted models other than v4-pro. Converted at
+# CNY 7.1 = USD 1 so the figure is comparable with the DeepSeek and Vertex runs; the
+# rate is a hand-entered assumption, not a fetched one.
+pricing:
+  input_per_mtok: 0.1408      # CNY 1.0
+  cached_input_per_mtok: 0.0282   # CNY 0.2  (20% of input)
+  output_per_mtok: 0.2817     # CNY 2.0

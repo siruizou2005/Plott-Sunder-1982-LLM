@@ -1,0 +1,17 @@
+.env
+runs/
+logs/
+.venv/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Superseded working directories, kept locally as a safety net. 1.1 GB of duplicated
+# runs and older copies of this code — nothing here is needed to reproduce anything.
+archive/
+
+# Vite build output
+web/dist/
+.DS_Store

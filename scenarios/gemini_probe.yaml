@@ -1,0 +1,44 @@
+# Can gemini-3.5-flash drive this market at all? One year, one round, thinking OFF.
+#
+# Year 1 is a no-information year, which is the sharpest first test: with every clue card
+# blank an agent has nothing but the bingo cage, so a stated expected value is right
+# (220 / 210 / 155) only if it actually derived 16-of-40 rather than assuming 50/50.
+run_name: gemini_probe
+seed: 20250725
+sequence_preset: paper_exact
+sessions: 1
+periods: 1
+max_rounds_per_period: 1
+
+rules:
+  price_improvement: true
+  announce_no_info_period: false
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+
+agents:
+  - kind: llm
+    model: gemini-3.5-flash        # the model name alone selects the Vertex provider
+    temperature: 0.7
+    # Measured on this model: thinking_level="minimal" reports no thoughts_token_count at
+    # all and answers in ~0.9s, against 404 thinking tokens and 3.5s when unset. Unlike
+    # Gemini 3.0, thinking here really can be turned off.
+    thinking: false
+    broadcast_thinking: false
+    reflect_thinking: false
+    max_output_tokens: 2048
+    broadcast_max_output_tokens: 512
+    reflect_max_output_tokens: 1200
+
+# Vertex AI, Gemini 3.5 Flash, Standard tier, GLOBAL location (cloud.google.com/
+# vertex-ai/generative-ai/pricing). Non-global regions are $1.65 / $9.90. Reasoning tokens
+# are billed as output, which is why the provider folds `thoughts_token_count` into
+# completion_tokens rather than reporting it separately.
+pricing:
+  input_per_mtok: 1.50
+  cached_input_per_mtok: 0.15
+  output_per_mtok: 9.00

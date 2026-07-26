@@ -1,0 +1,20 @@
+# Zero-intelligence baseline (Gode & Sunder 1993): answers 'is any of this just
+# the institution?'
+run_name: scripted_zi
+seed: 20250725
+sequence_preset: paper_exact
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # faithful: market 3's subjects were not told
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: zi
+

@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* Follow the viewer's system theme; every component styles both. */
+@variant dark (&:where(.dark, .dark *));
+
+html { color-scheme: light dark; }
+
+/* Wide tables and charts scroll inside their own container; the page body never does. */
+body { overflow-x: hidden; }

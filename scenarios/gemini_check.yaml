@@ -1,0 +1,48 @@
+# Two-period shakedown for gemini-3.5-flash, thinking OFF, three rounds each.
+#
+# Year 1: no information, state X   -> both models say 220. Does it price the prior?
+# Year 2: six insiders, state Y     -> RE says 175, PI says 220. The separating cell.
+#
+# Three rounds because the one-round probe produced ZERO trades: every agent quoted
+# below its own stated reservation and the price-improvement rule moves the bid up by
+# one franc at a time, so twelve turns were not enough for bid and ask to meet.
+
+run_name: gemini_check
+seed: 20250725
+sequence_preset: probe_none_then_insider
+sessions: 1
+periods: 2
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true
+  announce_no_info_period: false
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+
+agents:
+  - kind: llm
+    model: gemini-3.5-flash        # the model name alone selects the Vertex provider
+    temperature: 0.7
+    # Measured on this model: thinking_level="minimal" reports no thoughts_token_count at
+    # all and answers in ~0.9s, against 404 thinking tokens and 3.5s when unset. Unlike
+    # Gemini 3.0, thinking here really can be turned off.
+    thinking: false
+    broadcast_thinking: false
+    reflect_thinking: false
+    max_output_tokens: 2048
+    broadcast_max_output_tokens: 512
+    reflect_max_output_tokens: 1200
+
+# Vertex AI, Gemini 3.5 Flash, Standard tier, GLOBAL location (cloud.google.com/
+# vertex-ai/generative-ai/pricing). Non-global regions are $1.65 / $9.90. Reasoning tokens
+# are billed as output, which is why the provider folds `thoughts_token_count` into
+# completion_tokens rather than reporting it separately.
+pricing:
+  input_per_mtok: 1.50
+  cached_input_per_mtok: 0.15
+  output_per_mtok: 9.00

@@ -1,0 +1,51 @@
+# Market 3: the paper's most-analysed market and the one this codebase started from.
+#   states  Y Y Y X Y Y X Y X Y Y X
+#   info    none none insider insider insider insider insider insider insider insider all all
+run_name: bailian_m3_paper
+seed: 20250725
+sequence_preset: paper_exact
+market: 3
+sessions: 1
+max_rounds_per_period: 3
+# The endpoint tolerates 50-80 concurrent requests. A session drives its phases on one
+# thread, so at most `broadcast_workers` of its requests are ever in flight at once:
+# 5 Bailian sessions x 12 = 60 is a structural ceiling, not a statistical hope. Measured
+# mean is 1.9 per session, so 60 is only reached if all five happen to broadcast at once.
+# Raise the session count and this must come down (25 sessions would need W=3 for 75).
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing. Measured reasoning
+    # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
+    max_output_tokens: 8192
+    broadcast_max_output_tokens: 512
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    # Reasoning shares this budget. At 400 (and even at 1200) the note itself was
+    # truncated away: 6 of 12 year-end notes came back empty on the probe run.
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817
