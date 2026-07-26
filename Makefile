@@ -28,8 +28,12 @@ smoke:
 run:
 	$(PY) -m ps1982 run --scenario $(SC)/market3_paper_exact.yaml
 
+## Rescore the most recent log. `find` rather than a glob: runs are grouped one level
+## deeper now (runs/<group>/<run>/<stamp>.jsonl) and a fixed-depth glob silently matched
+## nothing after that change.
 metrics:
-	@f=$$(ls -t runs/*/*.jsonl | head -1); echo "$$f"; $(PY) -m ps1982 metrics --run "$$f"
+	@f=$$(find runs -name '*.jsonl' -type f -print0 | xargs -0 ls -t | head -1); \
+	 echo "$$f"; $(PY) -m ps1982 metrics --run "$$f"
 
 web:
 	cd web && npm run start

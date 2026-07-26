@@ -15,3 +15,6 @@ archive/
 # Vite build output
 web/dist/
 .DS_Store
+
+# Agent instructions — local working notes, not part of the published project
+CLAUDE.md
