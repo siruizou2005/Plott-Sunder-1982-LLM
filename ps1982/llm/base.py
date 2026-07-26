@@ -17,9 +17,12 @@ from pathlib import Path
 # project root — wherever this checkout lives (this file is ps1982/llm/base.py)
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# The DeepSeek account is shared with the GMS project; fall back to its .env so a fresh
-# checkout without a local .env still runs.
-_FALLBACK_ENV = Path("/Users/zousirui/Project/02-GMS-Project/.env")
+# A second .env to fall back on when this checkout has none of its own — useful when the
+# same API account is shared with another project. Set PS1982_FALLBACK_ENV to that file's
+# path; unset, there is simply no fallback. This used to be one developer's absolute path,
+# which was dead weight in every other checkout and published a local directory layout.
+_FALLBACK_ENV = Path(os.environ["PS1982_FALLBACK_ENV"]) \
+    if os.environ.get("PS1982_FALLBACK_ENV") else None
 
 # Textual markers of a transient/infra error (retry with backoff, not a model failure).
 # Network/DNS/connection blips all clear on a backoff-and-retry; treating them as hard
@@ -70,7 +73,12 @@ def _load_env() -> None:
     try:
         from dotenv import load_dotenv
         local = _PROJECT_ROOT / ".env"
-        load_dotenv(local if local.exists() else _FALLBACK_ENV)
+        if local.exists():
+            load_dotenv(local)
+        elif _FALLBACK_ENV and _FALLBACK_ENV.exists():
+            load_dotenv(_FALLBACK_ENV)
+        # Neither present: the environment may already carry the keys, so this is not an
+        # error — the provider will say so clearly if a key really is missing.
     except Exception:  # noqa: BLE001 — python-dotenv absent; env may already be set
         pass
 
