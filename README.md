@@ -155,6 +155,18 @@ layout the viewer expects, and that `runs/README.md` documents:
 
 The viewer scans recursively and shows the group alongside each run.
 
+### Getting the data
+
+Run logs are outputs, not source, and they are large — the eight complete market-3
+sessions alone are 473 MB — so they are not in this repository. Two ways to get them:
+
+- **Re-run them.** `./run_batch.sh` reproduces the whole batch; every run is deterministic
+  in its seed down to the round order, the tie-breaks and the seat→name mapping, so a
+  rerun of `m3_paper_0` faces exactly the market the reported one did. Measured cost is
+  about $50 for all 26 sessions. A single session is ~$2 and about an hour.
+- **Ask.** The logs from the sessions reported above are available on request —
+  siruizou2005@gmail.com.
+
 ---
 
 ## Results so far (market 3, eight complete sessions)
