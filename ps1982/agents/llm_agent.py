@@ -112,8 +112,14 @@ class LLMAgent(Agent):
             certs=ctx.certs, cash=ctx.cash, book=ctx.book, market_log=ctx.market_log,
             reflections=ctx.reflections, history=ctx.history,
             not_selected=ctx.not_selected, names=ctx.names, rules=self.rules)
-        r = self.provider.complete_json(self.broadcast_system, user,
-                                        thinking=self.spec.broadcast_thinking)
+        # `broadcast_max_output_tokens` was never passed here, so every broadcast in every
+        # run so far used the provider default of 8192 and the setting did nothing. It
+        # matters: broadcasts are ~70% of all calls, and on a locally served Qwen3.6 they
+        # came back at a median of 1,830 output tokens against a configured cap of 512.
+        r = self.provider.complete_json(
+            self.broadcast_system, user,
+            thinking=self.spec.broadcast_thinking,
+            max_output_tokens=self.spec.broadcast_max_output_tokens)
         env = _envelope(r, system=self.broadcast_system, user=user)
 
         data = r.get("data")

@@ -384,3 +384,43 @@ def test_resume_drops_events_the_checkpoint_does_not_account_for(tmp_path):
 
     # Idempotent: resuming twice must not eat committed events.
     assert _truncate_to_checkpoint(log, next_event_id=6) == 0
+
+
+def test_each_channel_gets_its_own_output_budget(monkeypatch):
+    """The three channels have separate token caps and each must actually be sent.
+
+    `broadcast_max_output_tokens` was silently unused for the whole life of the project:
+    the broadcast call passed `thinking` but not the cap, so every broadcast ran on the
+    provider default of 8192 while the scenario said 512. Broadcasts are ~70% of all
+    calls, so that is most of the token bill — and on a locally served Qwen3.6 the median
+    broadcast came back at 1,830 tokens, which is what exposed it.
+    """
+    from ps1982.agents.llm_agent import LLMAgent
+    from ps1982.config import AgentSpec, Rules
+    from ps1982.markets import MARKETS
+
+    seen = {}
+
+    class Rec:
+        def complete_json(self, system, user, *, thinking=False, max_output_tokens=None,
+                          **kw):
+            seen[len(seen)] = max_output_tokens
+            return {"data": {"response": "decline"}, "usage": None}
+
+        def complete_text(self, system, user, *, thinking=False, max_output_tokens=None,
+                          **kw):
+            seen[len(seen)] = max_output_tokens
+            return {"text": "note", "usage": None}
+
+    spec = AgentSpec(kind="llm", max_output_tokens=8192,
+                     broadcast_max_output_tokens=512, reflect_max_output_tokens=3000)
+    monkeypatch.setattr("ps1982.agents.llm_agent.get_provider", lambda **kw: Rec())
+    a = LLMAgent("S01", spec, Rules(), MARKETS[3], name="Nora")
+
+    ctx = type("C", (), dict(
+        seat="S01", period=1, info="none", card=None,
+        quote={"side": "bid", "price": 200, "seat": "S07"},
+        certs=2, cash=10_000, book={"bid": None, "ask": None, "spread": None},
+        market_log=[], reflections=[], history=[], not_selected=[], names={"S01": "Nora"}))()
+    a.respond_broadcast(ctx)
+    assert seen[0] == 512, f"broadcast must send its own cap, got {seen[0]}"
