@@ -70,13 +70,26 @@ class DeepSeekProvider(LLMProvider):
         self.thinking = bool(thinking)
         self.reasoning_effort = reasoning_effort
         self.repair_retries = repair_retries
-        # The hybrid V4 models (deepseek-v4-flash / -pro) DEFAULT TO THINKING ENABLED, so
-        # turning thinking OFF needs an explicit {"type": "disabled"} — omitting the field
-        # would still think. The legacy aliases fix the mode by name (deepseek-chat =
-        # non-thinking always, deepseek-reasoner = thinking always) and ignore the toggle.
-        # (api-docs.deepseek.com/guides/thinking_mode)
+        # Every vendor spells the thinking toggle differently, and getting it wrong is
+        # silent: the request succeeds and the model simply thinks (or does not) against
+        # your intent. Measured on DeepSeek, thinking OFF put 67% of broadcast expected
+        # values on the 50/50 prior instead of the bingo cage, so this flag decides
+        # whether a run measures the market or the model's arithmetic.
+        #
+        #   deepseek  hybrid V4 DEFAULTS TO THINKING ON, so turning it off needs an
+        #             explicit {"type": "disabled"} — omitting the field still thinks.
+        #             The legacy aliases fix the mode by name (deepseek-chat never
+        #             thinks, deepseek-reasoner always does) and ignore the toggle.
+        #             (api-docs.deepseek.com/guides/thinking_mode)
+        #   qwen      Qwen3/3.5/3.6 served by vLLM take it in the chat template, as
+        #             chat_template_kwargs.enable_thinking.
         _name = (self.model or "").lower()
-        self._hybrid = "reasoner" not in _name and "chat" not in _name
+        if "qwen" in _name:
+            self._thinking_style = "qwen"
+        elif "reasoner" in _name or "chat" in _name:
+            self._thinking_style = "fixed"        # mode is fixed by the model name
+        else:
+            self._thinking_style = "deepseek"
         self._client = None
 
     # ---------------------------------------------------------------- plumbing
@@ -93,9 +106,11 @@ class DeepSeekProvider(LLMProvider):
         return self._client
 
     def _thinking_body(self, thinking: bool) -> dict | None:
-        if not self._hybrid:
-            return None
-        return {"thinking": {"type": "enabled" if thinking else "disabled"}}
+        if self._thinking_style == "qwen":
+            return {"chat_template_kwargs": {"enable_thinking": thinking}}
+        if self._thinking_style == "deepseek":
+            return {"thinking": {"type": "enabled" if thinking else "disabled"}}
+        return None                               # the model name already fixes the mode
 
     def _call(self, system: str, user: str, *, temperature: float, thinking: bool,
               json_mode: bool, max_output_tokens: int) -> dict:

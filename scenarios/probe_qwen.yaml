@@ -1,0 +1,71 @@
+# Vendor shakedown for a locally served Qwen3.6-35B-A3B-FP8 (vLLM, OpenAI-compatible).
+#
+# Two periods, not an experiment. Year 1 has no information (state X), year 2 is the
+# separating cell — six insiders, state Y, RE 175 against PI 220. That is the least that
+# shows both "does it price the prior" and "does the price move once someone knows".
+#
+# What this probe is actually deciding, from the measurements that motivated it:
+#
+#   1. ARITHMETIC. With thinking off, DeepSeek put 67% of its broadcast expected values on
+#      the 50/50 prior (type I saying 250, type II 225) instead of on the bingo cage's
+#      16/40. Broadcasts are ~70% of all calls and most trades are struck through them, so
+#      a model that does this measures its own arithmetic rather than whether the market
+#      aggregates information. Type I's correct prior EV here is 220, type II 210,
+#      type III 155; the 50/50 answers are 250 / 225 / 150.
+#   2. JSON. The turn reply is a strict schema — a posterior summing to 1, integer
+#      reservation prices, one of three action objects. A model that cannot hold that
+#      shape produces forced no_quote turns, i.e. agents recorded as passing when they
+#      meant to trade.
+#   3. THROUGHPUT. 26 sessions come to ~95M output tokens; this measures what one H100
+#      actually delivers so the estimate stops being a guess.
+#
+# Thinking is ON. That is the whole point of the probe — the failure above was a
+# thinking-off failure, and Qwen3.6 takes the toggle through the chat template
+# (chat_template_kwargs.enable_thinking), which ps1982/llm/openai_compat.py now sends.
+
+run_name: probe_qwen
+market: 3
+seed: 20250725
+sequence_preset: probe_none_then_insider
+sessions: 1
+periods: 2
+max_rounds_per_period: 3
+# Served locally, so there is no 50-80 concurrency budget to respect: the ceiling is the
+# GPU's KV cache, measured at 1,627,136 tokens against a ~2,400-token average context.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+
+agents:
+  - kind: llm
+    # --served-model-name in ~/serve_vllm.sh on the Velda box.
+    model: qwen3.6
+    base_url: $QWEN_BASE_URL          # http://localhost:8000/v1 via velda port-forward
+    api_key_env: QWEN_API_KEY         # vLLM ignores it, but the OpenAI client demands one
+    temperature: 0.7
+    thinking: true
+    broadcast_thinking: true
+    reflect_thinking: true
+    # Reasoning shares this budget with the answer. Measured on DeepSeek: at 2048, 38% of
+    # turn calls hit the cap and 12% came back truncated mid-string, which the engine can
+    # only record as a forced no_quote.
+    max_output_tokens: 8192
+    broadcast_max_output_tokens: 512
+    reflect_max_output_tokens: 3000
+    # A local endpoint has no rate limit to pace against.
+    pace: 0.0
+    max_retries: 3
+
+pricing:
+  # Self-hosted: the cost is GPU time, not tokens. Zeroed so the run's reported spend does
+  # not silently imply an API bill that does not exist.
+  input_per_mtok: 0.0
+  cached_input_per_mtok: 0.0
+  output_per_mtok: 0.0
