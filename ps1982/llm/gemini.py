@@ -153,9 +153,13 @@ class GeminiProvider(LLMProvider):
     # ---------------------------------------------------------------- interface
 
     def complete_json(self, system: str, user: str, *, temperature: float | None = None,
-                      thinking: bool | None = None) -> dict:
+                      thinking: bool | None = None,
+                      max_output_tokens: int | None = None) -> dict:
+        # Same signature as the OpenAI-compatible provider: the caller decides the budget
+        # per channel, and the broadcast channel is 70% of all calls.
         temp = self.temperature if temperature is None else temperature
         think = self.thinking if thinking is None else thinking
+        cap = self.max_output_tokens if max_output_tokens is None else max_output_tokens
         usage = Usage()
         repairs = retries = 0
         backoff_s = latency = 0.0
@@ -166,7 +170,7 @@ class GeminiProvider(LLMProvider):
 
         while True:
             r = self._call(system, prompt, temperature=temp, thinking=think,
-                           json_mode=True, max_output_tokens=self.max_output_tokens)
+                           json_mode=True, max_output_tokens=cap)
             usage += r["usage"]
             retries += r["retries"]
             backoff_s += r["backoff_s"]

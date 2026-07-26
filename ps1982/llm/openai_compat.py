@@ -184,9 +184,14 @@ class DeepSeekProvider(LLMProvider):
     # ---------------------------------------------------------------- interface
 
     def complete_json(self, system: str, user: str, *, temperature: float | None = None,
-                      thinking: bool | None = None) -> dict:
+                      thinking: bool | None = None,
+                      max_output_tokens: int | None = None) -> dict:
+        # `complete_text` has always taken a per-call budget; this one did not, so the
+        # broadcast channel — 70% of all calls — could not have its own however the
+        # scenario was written. The two entry points now take the same arguments.
         temp = self.temperature if temperature is None else temperature
         think = self.thinking if thinking is None else thinking
+        cap = self.max_output_tokens if max_output_tokens is None else max_output_tokens
         usage = Usage()
         repairs = 0
         retries = 0
@@ -200,7 +205,7 @@ class DeepSeekProvider(LLMProvider):
 
         while True:
             r = self._call(system, prompt, temperature=temp, thinking=think,
-                           json_mode=True, max_output_tokens=self.max_output_tokens)
+                           json_mode=True, max_output_tokens=cap)
             usage += r["usage"]
             retries += r["retries"]
             backoff_s += r["backoff_s"]

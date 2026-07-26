@@ -401,14 +401,26 @@ def test_each_channel_gets_its_own_output_budget(monkeypatch):
 
     seen = {}
 
+    # Recorded against the REAL provider signatures, not a permissive **kw stub. A stub
+    # that swallows anything hides exactly the bug this test exists for: complete_json did
+    # not accept max_output_tokens at all, so passing it raised TypeError in production
+    # while the test passed.
+    import inspect
+
+    from ps1982.llm.openai_compat import DeepSeekProvider
+
+    for name in ("complete_json", "complete_text"):
+        params = inspect.signature(getattr(DeepSeekProvider, name)).parameters
+        assert "max_output_tokens" in params, f"{name} must take a per-call budget"
+
     class Rec:
-        def complete_json(self, system, user, *, thinking=False, max_output_tokens=None,
-                          **kw):
+        def complete_json(self, system, user, *, temperature=None, thinking=None,
+                          max_output_tokens=None):
             seen[len(seen)] = max_output_tokens
             return {"data": {"response": "decline"}, "usage": None}
 
-        def complete_text(self, system, user, *, thinking=False, max_output_tokens=None,
-                          **kw):
+        def complete_text(self, system, user, *, temperature=None, thinking=None,
+                          max_output_tokens=None):
             seen[len(seen)] = max_output_tokens
             return {"text": "note", "usage": None}
 
