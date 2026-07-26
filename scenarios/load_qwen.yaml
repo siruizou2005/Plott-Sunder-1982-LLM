@@ -1,0 +1,66 @@
+# Throughput test: 25 concurrent sessions, one separating period each, market 3.
+#
+# The question this answers is not whether the model can do the experiment — the probe
+# already said yes (97% of stated expected values used the bingo cage rather than a 50/50
+# prior, no malformed replies, no violations). It is how much concurrency buys.
+#
+# A single session leaves the GPU almost idle: measured at 478 output tok/s with 3.9
+# sequences in flight, against a KV cache of 1,627,136 tokens — 0.6% used. The whole
+# 26-session estimate turns on the multiplier when all of them run at once, and that
+# ranges from 6.6 hours to 16.4 depending on whether it is 8x or 20x. This measures it.
+#
+# One period, not twelve, and the separating one: six insiders and state Y, where RE says
+# 175 and PI says 220. A no-information period would load the GPU identically and tell you
+# nothing about whether the price reveals the state, so the cheap run may as well be the
+# informative one.
+#
+# Cost: ~18M output tokens across the 25 sessions, so 30-80 minutes of H100 time at
+# $4.40/h depending on the very multiplier being measured.
+
+run_name: load_qwen
+market: 3
+seed: 20250725
+sequence_preset: single_separating
+sessions: 1
+periods: 1
+max_rounds_per_period: 3
+# Served locally: the ceiling is the GPU's KV cache, not a vendor's rate limit. 25
+# sessions x 12 = 300 sequences at ~2,400 tokens of context is 720k of 1,627,136 — 44%.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+
+agents:
+  - kind: llm
+    model: qwen3.6
+    base_url: $QWEN_BASE_URL
+    api_key_env: QWEN_API_KEY
+    temperature: 0.7
+    # Thinking on everywhere. Measured on this model: with it off, the same expected-value
+    # question came back as 150 instead of 220 after four output tokens — it does not
+    # reason at all, it guesses. Broadcasts are ~70% of calls and most trades are struck
+    # through them, so a run with thinking off measures arithmetic, not markets.
+    thinking: true
+    broadcast_thinking: true
+    reflect_thinking: true
+    # Reasoning shares these budgets with the answer. Measured medians on this model:
+    # 2,489 output tokens per call overall, ~2,000 on a broadcast. 512 would truncate the
+    # reasoning before the JSON ever arrived.
+    max_output_tokens: 8192
+    broadcast_max_output_tokens: 4096
+    reflect_max_output_tokens: 3000
+    pace: 0.0
+    max_retries: 3
+
+pricing:
+  # Self-hosted: the cost is GPU time, not tokens.
+  input_per_mtok: 0.0
+  cached_input_per_mtok: 0.0
+  output_per_mtok: 0.0

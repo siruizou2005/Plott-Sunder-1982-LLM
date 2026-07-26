@@ -149,6 +149,16 @@ SEQUENCES: dict[str, Sequence] = {
         note="Shakedown: year 1 no information (X), year 2 six insiders (Y, separating).",
     ),
     # Table 1, market 3 — now taken from MARKETS[3] rather than retyped.
+    # One period, and the one that carries the most information: six insiders, state Y,
+    # RE 175 against PI 220. Used for throughput and vendor tests where a full session is
+    # more market than the question needs — a no-information period would exercise the
+    # engine just as hard while telling you nothing about whether price reveals the state.
+    "single_separating": Sequence(
+        name="single_separating",
+        states=("Y",) * 12,
+        info=("insider",) * 12,
+        note="One separating period: six insiders, state Y (RE 175 vs PI 220).",
+    ),
     "paper_exact": Sequence(
         name="paper_exact",
         states=_M3.sequence_states,
