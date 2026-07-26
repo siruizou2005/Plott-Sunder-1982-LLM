@@ -171,7 +171,12 @@ class DeepSeekProvider(LLMProvider):
             # about. Never fed back to a model: DeepSeek's own guidance is that
             # reasoning_content must not re-enter the context.
             return {"text": msg.content or "",
-                    "reasoning": getattr(msg, "reasoning_content", None) or "",
+                    # DeepSeek calls it `reasoning_content`; vLLM's reasoning parsers put
+                    # it on `reasoning`. Reading only one silently drops the whole chain
+                    # of thought while still paying for it — measured on Qwen3.6, 792 of
+                    # 796 output tokens for a one-number answer were reasoning.
+                    "reasoning": (getattr(msg, "reasoning_content", None)
+                                  or getattr(msg, "reasoning", None) or ""),
                     "error": None, "api_error": False,
                     "retries": transient_tries, "backoff_s": backoff_s,
                     "usage": Usage.from_response(resp), "latency_s": time.monotonic() - t0}
