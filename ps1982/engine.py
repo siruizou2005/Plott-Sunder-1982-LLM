@@ -560,6 +560,18 @@ class Engine:
 
     # ------------------------------------------------------------------ period
 
+    def _theory_of(self, period: int) -> dict:
+        """This period's RE/PI, conditioned on the clue that period actually carries.
+
+        "The clues of all insiders were identical", so one card identifies the period;
+        None in a no-information period, which is the prior for both models.
+        """
+        card = next((c for c in self.mkt.cards_for_period(period).values() if c), None)
+        return {**self.mkt.theory_price(period, card),
+                "holder": self.mkt.theory_holder(period, card),
+                "info": self.mkt.sequence_info[period - 1],
+                "state": self.mkt.sequence_states[period - 1]}
+
     def run_period(self, period: int, theta: str, info: str) -> None:
         self.period = period
         self.theta = theta
@@ -577,9 +589,16 @@ class Engine:
             self.state[s].not_selected = []
 
         # theta, the clue cards and the insider roster are all hidden from agents.
+        # The authoritative prediction for THIS period, computed from the clue actually
+        # dealt above. period_start is the only place that is guaranteed correct: a
+        # redrawn market-1 run can land on Table 1's state for a period and still hold a
+        # different sample, and nothing keyed by (info, state) can tell the two apart.
+        _card = next((c for c in self.cards.values() if c), None)
         self.stream.emit("period_start", {
             "period": period, "state": theta, "info": info,
             "cards": dict(self.cards),
+            "theory": {**self.mkt.theory_price(period, _card),
+                       "holder": self.mkt.theory_holder(period, _card)},
             "insiders": [s for s in self.mkt.seats if self.cards[s] is not None] if info != "none" else [],
             "fixed_insiders": list(self.mkt.insiders),
         }, agent_visible=False)
@@ -686,9 +705,23 @@ class Engine:
             # — the viewer's copy was market 3's, hard-coded, and would have been silently
             # wrong for every other market.
             "state_set": list(self.mkt.states),
-            "theory": {f"{i}|{st}": {**self.mkt.theory_at(i, st)[0],
-                                     "holder": self.mkt.theory_at(i, st)[1]}
-                       for i in ("none", "insider", "all") for st in self.mkt.states},
+            # Keyed by PERIOD, not by (info, state). Market 1's prediction depends on the
+            # ten-draw sample that period actually got, so one cell per (info, state)
+            # cannot hold it: `insider|Y` is RE 320 in period 5 and RE 262 in period 8,
+            # and whichever was written last silently stood for both. The other four
+            # markets have a lettered clue, so their (info, state) cells were adequate —
+            # which is why this went unnoticed. `theory_by_state` is still written for
+            # readers that predate this, and is correct for markets 2-5.
+            "theory": {str(p): self._theory_of(p) for p in range(1, n + 1)},
+            # Correct for markets 2-5, where a lettered clue makes (info, state) enough to
+            # identify the prediction. NOT written for market 1: there it would hold the
+            # state-contingent price (RE 350 in state Y) where the sample's posterior says
+            # 320 or 262, and a reader picking it up would be silently wrong. A missing
+            # key fails loudly; a wrong one does not.
+            "theory_by_state": None if self.mkt.imperfect else {
+                f"{i}|{st}": {**self.mkt.theory_at(i, st)[0],
+                              "holder": self.mkt.theory_at(i, st)[1]}
+                for i in ("none", "insider", "all") for st in self.mkt.states},
             "sequence_preset": seq.name, "sequence_note": seq.note,
             "states": list(seq.states[:n]), "info": list(seq.info[:n]),
             "config": json.loads(self.cfg.model_dump_json()),

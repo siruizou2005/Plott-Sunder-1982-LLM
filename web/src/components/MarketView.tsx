@@ -1,5 +1,5 @@
 import { Fragment, useMemo } from 'react'
-import { useStore, type DerivedState } from '../store'
+import { useStore, type DerivedState, theoryFor } from '../store'
 import { useT, type Strings } from '../i18n'
 import { Empty, Panel, Tag, fmt } from './ui'
 import { EChart, axisStyle, tooltipStyle } from './EChart'
@@ -167,14 +167,14 @@ function PriceChart({ d }: { d: DerivedState }) {
       })))
 
     const stepLine = (key: 'RE' | 'PI') => buckets.flatMap((b, bi) => {
-      const v = theory[`${b.info}|${b.state}`]?.[key]
+      const v = theoryFor(theory, b.period, b.info, b.state)?.[key]
       return v === undefined ? [] : [[bi, v], [bi + 1, v], [null, null]]
     })
 
     // Anchoring y at 0 threw away 40% of the plot; frame the data plus the theory lines.
     const vals = [...pts.map((p) => p.price),
                   ...buckets.flatMap((b) => {
-                    const th = theory[`${b.info}|${b.state}`]
+                    const th = theoryFor(theory, b.period, b.info, b.state)
                     return th ? [th.RE, th.PI] : []
                   })]
     const lo = vals.length ? Math.min(...vals) : 0

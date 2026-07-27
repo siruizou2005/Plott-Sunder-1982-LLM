@@ -96,9 +96,28 @@ let ws: WebSocket | null = null
  * source for an earlier one. Nothing leaks either way: the grid already says that types
  * and clue cards are audience-visible and no agent ever sees them.
  */
-/** RE/PI predictions the RUN recorded, keyed "info|state". Market 3's values used to be
- *  hard-coded in MarketView, which made the viewer silently wrong for any other market. */
-export type Theory = Record<string, { PI: number; RE: number; holder?: { PI: string; RE: string } }>
+/** RE/PI predictions the RUN recorded. Market 3's values used to be hard-coded in
+ *  MarketView, which made the viewer silently wrong for any other market.
+ *
+ *  Two key schemes live here, and which one a log uses is a fact about when it was written:
+ *   - PERIOD-keyed ("1", "2", ...) — what the engine writes now, and the only scheme that
+ *     can express market 1, whose prediction depends on the ten-draw sample that period
+ *     drew. `insider|Y` is RE 320 in period 5 and RE 262 in period 8.
+ *   - (info|state)-keyed — every log written before that. Correct for markets 2-5, where
+ *     the clue is a letter; wrong for market 1, which is why the engine now refuses to
+ *     write that form for an imperfect market at all.
+ *  `theoryFor` reads either, preferring the period. */
+export type TheoryCell = { PI: number; RE: number; holder?: { PI: string; RE: string } }
+export type Theory = Record<string, TheoryCell>
+
+/** The prediction for one period, from whichever scheme this run recorded. */
+export function theoryFor(theory: Theory, period: number,
+                          info: string | null, state: string | null): TheoryCell | undefined {
+  const byPeriod = theory[String(period)]
+  if (byPeriod) return byPeriod
+  // The (info|state) fallback needs both; a bucket that has neither predates the fields.
+  return info && state ? theory[`${info}|${state}`] : undefined
+}
 
 /** Logs written before the engine recorded its theory are market 3 — the only market that
  *  existed then — so this is a fact about those logs, not a guess about new ones. */
@@ -111,11 +130,30 @@ export const THEORY_MARKET3: Theory = {
   'all|Y': { PI: 175, RE: 175, holder: { PI: 'III', RE: 'III' } },
 }
 
+/** Market 1's clue is a ten-draw sample, so an (info|state) cell cannot hold its
+ *  prediction — `insider|Y` is RE 320 in period 5 and RE 262 in period 8. Logs written
+ *  before the engine keyed by period carry the state-contingent value there (RE 350),
+ *  which is wrong for every one of those periods. Drawing no theory line is the honest
+ *  outcome; the engine now refuses to write that field for an imperfect market at all. */
+const stateKeyed = (th: Theory) => Object.keys(th).some((k) => k.includes('|'))
+
 function harvestTheory(batch: Ev[], into: Theory): Theory {
+  let out = into
+  let market: number | undefined
   for (const e of batch) {
-    if (e.type === 'session_start' && e.payload?.theory) return e.payload.theory as Theory
+    if (e.type === 'session_start' && e.payload?.market !== undefined) market = e.payload.market
+    if (e.type === 'session_start' && e.payload?.theory) {
+      const th = e.payload.theory as Theory
+      out = market === 1 && stateKeyed(th) ? {} : th
+    }
+    // period_start carries the prediction for its own period, computed from the clue that
+    // period actually dealt. It is the authoritative source when both are present, and it
+    // is the only one a resumed log is guaranteed to have.
+    if (e.type === 'period_start' && e.payload?.theory && e.payload?.period !== undefined) {
+      out = { ...out, [String(e.payload.period)]: e.payload.theory as TheoryCell }
+    }
   }
-  return into
+  return out
 }
 
 function harvestSeatTypes(batch: Ev[], into: Record<string, string>): Record<string, string> {
