@@ -1,0 +1,72 @@
+# Market 4, 4 rounds per period. Identical to scenarios/m4_paper.yaml in every other
+# respect — same model, same three thinking budgets (8192 turn / 8192 broadcast / 3000
+# reflect), same W=12, same rules — because the rounds arm asks one question and must vary
+# one thing to ask it: is the informed BUYER's failure to move the price a real behaviour or
+# an artifact of only three rounds of trading against the paper's continuous oral auction?
+#
+# Run it on the seed its 3-round counterpart used (20250755, i.e. m4_paper_0), so every
+# session in the arm faces a market identical to one already reported, down to the drawn
+# sequence. Measured on the 3-round sessions: buyer-side discovery is +0.11 and does not
+# move from the first trade of a period (-0.11) to the last (+0.04), which is what makes
+# truncation an unlikely explanation and this arm a confirmation rather than a coin flip.
+# Market 4: fourteen periods, and the only market with a no-information period at the
+# END as well as the start (period 14).
+#   states  X Y Y X Y X Y Y X Y X Y X Y
+#   info    none none none none insider insider insider insider insider insider insider insider insider none
+run_name: bailian_m4_paper
+seed: 20250725
+sequence_preset: paper_exact
+market: 4
+sessions: 1
+max_rounds_per_period: 4
+# The endpoint tolerates 50-80 concurrent requests. A session drives its phases on one
+# thread, so at most `broadcast_workers` of its requests are ever in flight at once:
+# 5 Bailian sessions x 12 = 60 is a structural ceiling, not a statistical hope. Measured
+# mean is 1.9 per session, so 60 is only reached if all five happen to broadcast at once.
+# Raise the session count and this must come down (25 sessions would need W=3 for 75).
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing. Measured reasoning
+    # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
+    max_output_tokens: 8192
+    # 8192, not 512, and the number is measured. `broadcast_max_output_tokens` was dead
+    # config until f27fec7/f789d04: every broadcast in every earlier run used the provider
+    # default of 8192, which is what market 3's completed sessions ran at. The first run
+    # after the cap actually reached the provider truncated 29% of broadcasts (249 of 859)
+    # to an empty string -- the model spent the whole 512 reasoning and emitted no JSON,
+    # measured as reasoning_tokens 1,536 = 3 x 512 across the call and its two repairs.
+    # The unconstrained distribution from those market-3 runs: median 609, 58% over 512,
+    # p95 2,526, p99 3,756, max 7,170. A cap here does not save money either: a truncated
+    # call burns 1,536 tokens and returns nothing, against 609 for one clean call.
+    broadcast_max_output_tokens: 8192
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    # Reasoning shares this budget. At 400 (and even at 1200) the note itself was
+    # truncated away: 6 of 12 year-end notes came back empty on the probe run.
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

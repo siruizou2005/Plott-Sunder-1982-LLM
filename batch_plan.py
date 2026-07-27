@@ -63,12 +63,31 @@ def plan(with_gemini: bool = True, markets: list[int] | None = None):
     return out
 
 
+# The rounds arm. Six market-4 sessions at 4, 5 and 6 rounds per period, each reusing the
+# seed of a 3-round session already reported, so the whole gradient 3/4/5/6 runs on two
+# fixed sequences — Table 1's and m4_random_0's redraw — and rounds is the only thing that
+# moves. Deliberately NOT folded into plan(): those 26 sessions are the replication, this is
+# a follow-up that varies a design parameter the paper did not have.
+ROUNDS_ARM_SEEDS = {"paper": 20250755, "random": 20250757}   # = m4_paper_0, m4_random_0
+ROUNDS_ARM = (4, 5, 6)
+
+
+def rounds_arm():
+    """[(name, scenario, seed, rounds)] — market 4 at 4, 5 and 6 rounds per period."""
+    return [(f"rounds/m4_r{r}_{arm}", f"scenarios/m4_{arm}_r{r}.yaml", seed, r)
+            for r in ROUNDS_ARM for arm, seed in sorted(ROUNDS_ARM_SEEDS.items())]
+
+
 def pending():
     """Markets specified but not yet runnable — printed so the gap is never invisible."""
     return [m for m, (impl, _, _) in sorted(MARKETS.items()) if not impl]
 
 
 if __name__ == "__main__":
+    if "--rounds-arm" in sys.argv:
+        for name, sc, seed, r in rounds_arm():
+            print(f"{name}\t{sc}\t{seed}\t{r}")
+        sys.exit(0)
     show = "--show" in sys.argv
     only = [int(a[2:]) for a in sys.argv[1:] if a.startswith("-m") and a[2:].isdigit()]
     rows = plan(with_gemini="--no-gemini" not in sys.argv, markets=only or None)
