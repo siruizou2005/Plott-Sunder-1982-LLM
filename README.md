@@ -35,7 +35,7 @@ cp .env.example .env          # add your own keys
 # 1. free — check parameters and rendered prompts
 ./.venv/bin/python -m ps1982 validate -s scenarios/m3_paper.yaml
 
-# 2. free — 372 offline tests
+# 2. free — 381 offline tests
 ./.venv/bin/pytest
 
 # 3. free — the engine correctness gate (see below); run this first
@@ -132,13 +132,13 @@ ps1982/
   agents/        llm_agent.py · scripted.py (zi / pi / re baselines)
   prompts/       instructions.py (Instruction Set 2, adapted) · brief.py · schemas.py
   llm/           openai_compat.py (DeepSeek / Bailian) · gemini.py (Vertex) · base.py
-scenarios/       one YAML per experimental arm, 30 of them
+scenarios/       one YAML per experimental arm, 32 of them
 runs/            not in git — see below
 web/server/      Express + WebSocket; reads runs/, paces replay, tails live runs
   timeline.js    the only definition of a playback step: one step = one agent's TURN
 web/src/         React + ECharts + zustand; i18n.ts holds the whole 中/EN dictionary
 docs/            markets-1-to-5.md · paper-verification.md · design-deltas.md
-tests/           372 offline tests; nothing here touches the network
+tests/           381 offline tests; nothing here touches the network
 ```
 
 ### runs/ is grouped by purpose
@@ -148,73 +148,128 @@ layout the viewer expects, and that `runs/README.md` documents:
 
 | group | what it holds |
 |---|---|
-| `m3/` | complete market-3 sessions from the main batch |
+| `m1/` … `m5/` | the five markets, five complete sessions each (`m3/` has a sixth, on Gemini) |
 | `m3_local/` | earlier complete market-3 sessions on DeepSeek's own API |
 | `baselines/` | scripted agents and the smoke shakedown; zero API cost |
-| `probes/` | one- or two-period vendor shakedowns, not experiments |
+| `probes/` | one-period vendor and throughput shakedowns, not experiments |
 
 The viewer scans recursively and shows the group alongside each run.
 
 ### Getting the data
 
-Run logs are outputs, not source, and they are large — the eight complete market-3
-sessions alone are 473 MB — so they are not in this repository. Two ways to get them:
+Run logs are outputs, not source, and they are large — the 26 complete sessions are 1.5 GB
+— so they are not in this repository. Two ways to get them:
 
 - **Re-run them.** `./run_batch.sh` reproduces the whole batch; every run is deterministic
   in its seed down to the round order, the tie-breaks and the seat→name mapping, so a
-  rerun of `m3_paper_0` faces exactly the market the reported one did. Measured cost is
-  about $50 for all 26 sessions. A single session is ~$2 and about an hour.
+  rerun of `m3_paper_0` faces exactly the market the reported one did. Measured cost for
+  all 26 is $66.56, of which $18.95 is the single Gemini session; the 25 Bailian sessions
+  come to $47.61. One session is $1.04–2.52 and 3.4–8.0 hours depending on the market,
+  and the whole batch runs concurrently.
 - **Ask.** The logs from the sessions reported above are available on request —
   siruizou2005@gmail.com.
 
 ---
 
-## Results so far (market 3, eight complete sessions)
+## Results (all five markets, 26 complete sessions)
 
-**The market does aggregate information.** Twenty-five separating-period observations
-(RE = 175, PI = 220, midpoint 197.5):
+**Prices reach the rational-expectations level in every market but the one the paper itself
+says they should not.** Eighty-nine separating-period observations:
 
-| | five DeepSeek sessions pooled |
-|---|---:|
-| mean price, separating periods | **173.1** |
-| price changes toward RE | 62% |
-| efficiency E | 88–94% |
+| market | sessions | separating obs | mean price | closing price | RE | PI | efficiency E |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 5 | 8 | 273.1 | 275.9 | 262–272 | 283 | 80–94% |
+| 2 | 5 | 8 | 236.4 | 216.0 | **240** | 267 | 86–98% |
+| 3 | 6 | 30 | 172.4 | 166.6 | **175** | 220 | 84–91% |
+| 4 | 5 | 26 | 164.9 | 161.8 | **175** | 210 | 88–92% |
+| 5 | 5 | 17 | 179.7 | 170.3 | **180** | 212 | 86–92% |
 
-Prices do not merely *move toward* RE — they **land on it**, 1.9 francs away. DeepSeek and
-Gemini agree on every headline measure.
+Market 5 lands 0.3 francs from RE, market 3 within 2.6, market 2 within 3.6; market 4
+overshoots it by 10. Market 1 is the exception — and market 1 is where the paper writes
+that the results "provided little support for the RE model," its insiders holding a
+ten-draw sample rather than the state.
 
-### A pattern the standard analysis cannot see
+**The derivation agrees with the paper period by period.** `Market.theory_price()` computes
+RE and PI from the dividends and the prior; Table 3's cells pin markets 2–5, and footnote
+6 — the only published check on market 1, whose row Table 3 omits — pins which periods
+separate, and how many there are in total:
 
-The paper's separating periods are those where RE ≠ PI, so a state in which **both models
-predict the same price is dropped from the analysis** — and that is exactly where
-aggregation fails completely.
+| | market 1 | market 2 | market 3 | market 4 | market 5 | total |
+|---|---|---|---|---|---|---:|
+| paper, footnote 6 | 6, 8 | 7, 9 | 3, 5, 6, 8, 10 | 5, 7, 8, 10, 12 | 4, 5, 11 | 17 |
+| derived here | 6, 8 | 7, 9 | 3, 5, 6, 8, 10 | 5, 7, 8, 10, 12 | 4, 5, 11 | **17** |
 
-`metrics.price_discovery_by_informed_side()` fills that gap:
+### What the separating-period criterion cannot see
+
+In an insider period the prior-information price is the highest valuation in the market,
+`PI = max(informed, uninformed)`, and the rational-expectations price is the informed one.
+So
 
 ```
-discovery = (actual mean price − uninformed level) / (RE − uninformed level)
+RE ≠ PI   ⟺   RE < uninformed level   ⟺   the informed want to SELL
 ```
 
-| | mean | n (independent unit = session) |
-|---|---:|---:|
-| informed are **sellers** | **1.02** | 6 |
-| informed are **buyers** | **0.03** | 6 |
+That is an identity, not a tendency: across 26 sessions the separating periods and the
+seller-side periods are the same 89 periods, with no exceptions. **The paper's headline
+result, and the table above, are therefore statements about the seller side alone.** The
+periods where the informed are buyers are outside the criterion by construction — not
+overlooked, unreachable.
 
-**When the informed want to sell, the market covers the whole distance; when they want to
-buy, it covers essentially none.** All six sessions agree in sign — sign test p = 0.016,
-within-session permutation test p < 0.0001.
+`metrics.price_discovery_by_informed_side()` scores them anyway:
 
-The proposed reason is an asymmetry in incentive. When the informed hold an asset worth
-*less* than the uninformed believe, selling is how they profit, and selling pushes the
-price toward RE — the information leaks through the act of exploiting it. When the asset is
-worth *more*, they profit by buying quietly; bidding the price up to RE would destroy their
-own surplus, so they have both the motive and the means to keep it near the uninformed
-level.
+```
+discovery = (price − uninformed level) / (RE − uninformed level)
+```
 
-**This is still a hypothesis.** It rests on one market design, and market 3's X state has
-four times as far to travel (180 francs) as its Y state (45), so part of the gap may be
-distance rather than willingness. **Markets 2 and 5 reverse the buy/sell direction**, which
-is the direct way to tell the two explanations apart.
+| | LLM agents, 26 sessions | humans, market 3 | humans, market 5 |
+|---|---:|---:|---:|
+| informed are **sellers** | **+1.13** (89 periods) | +1.08 | +1.09 |
+| informed are **buyers** | **+0.04** (99 periods) | +0.80 | +0.66 |
+
+The human columns are the paper's own average prices from figures 4 and 6, scored with the
+same formula. **The asymmetry is in the paper's data too** — this measures it rather than
+discovers it. Twenty-three of twenty-six sessions agree in sign, median paired gap +1.05.
+
+What differs is not whether the asymmetry exists but whether it goes away:
+
+```
+by repetition of the state       1st     2nd     3rd     4th     5th
+  seller side, LLM              +1.17   +1.30   +1.10   +1.02   +1.03
+  buyer side,  LLM              −0.01   +0.13   +0.04   +0.10   −0.51
+  buyer side,  humans (m3, X)   +0.63   +0.80   +0.98
+  buyer side,  humans (m5, Z)   −0.06   +0.60   +0.78
+```
+
+and, within a period, the seller side never converges because it never has to:
+
+```
+                    first trade    mean    close
+  informed selling      +1.14      +1.13   +1.11
+  informed buying       −0.11      +0.04   +0.04
+```
+
+**Selling leaks the information through the act of exploiting it** — an insider who wants
+to sell must undercut, so the first transaction of the period already carries the state,
+for humans and LLM agents alike. Buying does not: bidding up to RE destroys the buyer's own
+surplus. Human subjects nonetheless learn to price it in, reaching RE by a state's third
+occurrence, which is the convergence the paper reports as insiders' advantage vanishing
+"completely" upon replication. These agents do not, over five.
+
+Market 1's period 11 shows the mechanism directly, in a period where everyone holds the
+same clue and the certificate is worth 349.3 to type I. The three type-I agents state
+reservation prices of 349, 349 and 348 — they have the number — and then transact at
+300–302, which is type II's valuation, stopping the moment they outbid the second-highest
+type. Human subjects in the same period traded at 347. The certificates still end up in
+type I's hands (17 or 18 of 18, as RE predicts): **the allocation hypothesis holds while
+the price hypothesis fails, because the entire surplus goes to the buyers.**
+
+**What is still open.** The human columns rest on one realized sequence per market — the
+paper's formal convergence test is Table 6's profit ratios, not these trajectories. And
+these sessions run three rounds per period against continuous oral trading, so buyer-side
+under-competition could be a truncation artifact; the first-trade row above argues against
+it, since a price that never moves from the first transaction to the last is not a price
+that ran out of time. A five-round arm on market 4, seed-paired with the five sessions
+reported here, is the direct test.
 
 ---
 
