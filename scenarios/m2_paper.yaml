@@ -41,7 +41,16 @@ agents:
     # i.e. an agent that meant to trade recorded as passing. Measured reasoning
     # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
     max_output_tokens: 8192
-    broadcast_max_output_tokens: 512
+    # 8192, not 512, and the number is measured. `broadcast_max_output_tokens` was dead
+    # config until f27fec7/f789d04: every broadcast in every earlier run used the provider
+    # default of 8192, which is what market 3's completed sessions ran at. The first run
+    # after the cap actually reached the provider truncated 29% of broadcasts (249 of 859)
+    # to an empty string -- the model spent the whole 512 reasoning and emitted no JSON,
+    # measured as reasoning_tokens 1,536 = 3 x 512 across the call and its two repairs.
+    # The unconstrained distribution from those market-3 runs: median 609, 58% over 512,
+    # p95 2,526, p99 3,756, max 7,170. A cap here does not save money either: a truncated
+    # call burns 1,536 tokens and returns nothing, against 609 for one clean call.
+    broadcast_max_output_tokens: 8192
     reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
     # Reasoning shares this budget. At 400 (and even at 1200) the note itself was
     # truncated away: 6 of 12 year-end notes came back empty on the probe run.
