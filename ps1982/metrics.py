@@ -30,6 +30,19 @@ def _allocation_value_prior(mkt, holdings: dict[str, int]) -> float:
     return float(sum(n * mkt.prior_ev[mkt.seat_type[seat]] for seat, n in holdings.items()))
 
 
+def _clue(per: dict) -> str | None:
+    """The sample market 1's insiders actually held this period, read off the log.
+
+    Market 1's predictions turn on the realized sample, and `theory_at` cannot recover it
+    from the period number alone: a redrawn run can land on the paper's state for a period
+    while having drawn a different ten-mark sample. Deriving the card then scores the
+    period against the wrong theory — on m1_random_0 that put the wrong RE on periods 5, 6
+    and 8 and flipped the separating flag on two of them. None for every other market,
+    where the card is a letter and the posterior is degenerate either way.
+    """
+    return next((c for c in (per.get("cards") or {}).values() if c), None)
+
+
 def _benchmarks(mkt, info: str, state: str) -> dict[str, float]:
     """Expected returns of the RE and no-trade allocations: the denominators of E and TE.
 
@@ -115,7 +128,7 @@ def period_prices(mkt, per: dict) -> dict:
     """Mean / first / last trade price, against the two models' predictions (figure 4)."""
     prices = [t["price"] for t in per["trades"]]
     key = (per["info"], per["state"])
-    theory = mkt.theory_at(*key, per.get('period'))[0]
+    theory = mkt.theory_at(*key, per.get('period'), _clue(per))[0]
     return {
         "period": per["period"], "state": per["state"], "info": per["info"],
         "n_trades": len(prices),
@@ -136,7 +149,7 @@ def price_changes_toward_re(mkt, periods: list[dict]) -> dict:
     for per in periods:
         prices = [t["price"] for t in per["trades"]]
         key = (per["info"], per["state"])
-        tp = mkt.theory_at(*key, per.get("period"))[0]
+        tp = mkt.theory_at(*key, per.get("period"), _clue(per))[0]
         re_p, pi_p = tp["RE"], tp["PI"]
         buckets = ["all"] + (["separating"] if re_p != pi_p else [])
         for a, b in zip(prices, prices[1:]):
@@ -160,9 +173,9 @@ def wrong_hands(mkt, per: dict) -> dict:
     key = (per["info"], per["state"])
     out = {}
     for model in ("PI", "RE"):
-        want = set(mkt.holder_seats(mkt.theory_at(*key, per.get("period"))[1][model]))
+        want = set(mkt.holder_seats(mkt.theory_at(*key, per.get("period"), _clue(per))[1][model]))
         held_right = sum(r["certs"] for s, r in per["results"].items() if s in want)
-        out[model] = {"predicted_holder": mkt.theory_at(*key, per.get("period"))[1][model],
+        out[model] = {"predicted_holder": mkt.theory_at(*key, per.get("period"), _clue(per))[1][model],
                       "in_right_hands": held_right,
                       "in_wrong_hands": mkt.market_supply - held_right}
     return out
@@ -192,7 +205,7 @@ def re_side_profit_ratio(mkt, per: dict) -> dict | None:
     if not per["results"]:
         return None
     key = (per["info"], per["state"])
-    buyers = set(mkt.holder_seats(mkt.theory_at(*key, per.get("period"))[1]["RE"]))
+    buyers = set(mkt.holder_seats(mkt.theory_at(*key, per.get("period"), _clue(per))[1]["RE"]))
     b = [r["profit"] for s, r in per["results"].items() if s in buyers]
     s_ = [r["profit"] for s, r in per["results"].items() if s not in buyers]
     mb, ms = _mean(b), _mean(s_)
@@ -254,7 +267,7 @@ def price_discovery_by_informed_side(mkt, periods: list[dict]) -> dict:
     for per in periods:
         if per["info"] != "insider" or not per["trades"]:
             continue
-        re_p = mkt.theory_at(per["info"], per["state"], per.get("period"))[0]["RE"]
+        re_p = mkt.theory_at(per["info"], per["state"], per.get("period"), _clue(per))[0]["RE"]
         if abs(re_p - base) < 1e-9:
             continue                      # nothing to discover in this state
         side = "buyer" if re_p > base else "seller"
@@ -314,7 +327,7 @@ def first_quote_information(mkt, per: dict) -> dict | None:
     if not acts:
         return None
     a = acts[0]
-    re_p = mkt.theory_at(per["info"], per["state"], per.get("period"))[0]["RE"]
+    re_p = mkt.theory_at(per["info"], per["state"], per.get("period"), _clue(per))[0]["RE"]
     return {"seat": a["seat"], "side": a["side"], "price": a["price"],
             "insider": per["cards"].get(a["seat"]) is not None,
             "distance_to_re": abs(a["price"] - re_p)}

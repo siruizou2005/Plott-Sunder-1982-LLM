@@ -350,6 +350,57 @@ def test_derived_predictions_match_table_3(number):
     assert checked, f"market {number}: no Table 3 cell was actually exercised"
 
 
+# The paper counts its own separating periods: "across all periods of all markets, the
+# price predictions of the competing models differed 17 times", with footnote 6 listing
+# them. This is the ONLY published check on market 1, whose Table 3 row the paper omits
+# ("in market 1 information given to insiders was probabilistic. Predictions are not given
+# here in order to save space") — so it is what licenses market 1's derived predictions.
+FOOTNOTE_6 = {1: [6, 8], 2: [7, 9], 3: [3, 5, 6, 8, 10],
+              4: [5, 7, 8, 10, 12], 5: [4, 5, 11]}
+
+
+@pytest.mark.parametrize("number,periods", sorted(FOOTNOTE_6.items()))
+def test_separating_periods_match_footnote_6(number, periods):
+    """Which periods separate on price, against the paper's own list.
+
+    Market 1 is the reason this test exists. Deriving its RE price from the realized state
+    rather than from the clue's posterior made periods 5 and 7 look separating too: with a
+    good sample (posterior .149 on X) the insider values a certificate at 320.1, which is
+    already the highest valuation in the market, so BOTH models name 320.1 and the period
+    does not separate. Only the bad-news samples separate — period 6 (.555) and period 8
+    (.770), where the insider's valuation falls BELOW the uninformed 283.3 and the two
+    models disagree about whether the market learns it.
+    """
+    m = MARKETS[number]
+    got = [p for p in range(1, m.n_periods + 1)
+           if m.theory_price(p)["RE"] != m.theory_price(p)["PI"]]
+    assert got == periods, f"market {number}: derived {got}, paper's footnote 6 {periods}"
+
+
+def test_footnote_6_totals_seventeen():
+    """The paper's own total, which only comes out right if every market agrees."""
+    total = sum(len([p for p in range(1, MARKETS[n].n_periods + 1)
+                     if MARKETS[n].theory_price(p)["RE"] != MARKETS[n].theory_price(p)["PI"]])
+                for n in MARKETS)
+    assert total == 17, f"derived {total} price-separating periods; the paper reports 17"
+
+
+def test_market_1_re_conditions_on_the_sample_not_the_state():
+    """RE cannot exceed the information in the market, and market 1's is a sample.
+
+    Period 11's sample puts posterior .003 on X, so a fully revealing price is 349.3 —
+    just under, never at, the 350 that knowing state Y for certain would justify. Reading
+    350 here would mean the market revealed more than any agent knew.
+    """
+    m = MARKETS[1]
+    assert m.theory_price(11)["RE"] == 349
+    assert m.theory_price(11)["RE"] < max(m.dividends[t]["Y"] for t in m.types)
+    # and the bad-news separating periods sit BELOW the uninformed valuation, not above
+    uninformed = round(max(m.prior_ev.values()))
+    for p in (6, 8):
+        assert m.theory_price(p)["RE"] < uninformed == m.theory_price(p)["PI"]
+
+
 def test_table_3_divergence_is_tracked_separately_for_price_and_allocation():
     """A cell can separate on ALLOCATION while both models name the same PRICE.
 
@@ -386,14 +437,25 @@ def test_allocation_separates_wherever_price_does_and_sometimes_more():
 
 
 def test_market_1_predictions_are_ours_because_the_paper_omits_them():
-    """Not a gap in the transcription — the paper says it left them out."""
+    """Not a gap in the transcription — the paper says it left them out.
+
+    Which does not leave them unchecked: footnote 6 counts market 1's separating periods,
+    and test_separating_periods_match_footnote_6 holds the derivation to that count.
+
+    This test used to assert the separating set was `[5, 6, 7, 8]`, commented "exactly its
+    insider periods" — and that comment was the bug. It froze the assumption that every
+    insider period separates, which holds only when RE is read off the realized state.
+    Under an imperfect clue a good sample leaves both models naming the same price, so only
+    half of market 1's insider periods separate. A test that pins whatever the code does
+    cannot catch the code being wrong; this one now pins what the paper reports.
+    """
     assert 1 not in TABLE_3
     m = MARKETS[1]
     sep = [p for p in range(1, m.n_periods + 1)
            if m.theory_price(p)["RE"] != m.theory_price(p)["PI"]]
-    assert sep == [5, 6, 7, 8], sep      # exactly its insider periods
-    for p in sep:
-        assert m.sequence_info[p - 1] == "insider"
+    insider = [p for p in range(1, m.n_periods + 1) if m.sequence_info[p - 1] == "insider"]
+    assert sep == FOOTNOTE_6[1]
+    assert set(sep) < set(insider), "separating periods are a strict subset of insider ones"
 
 
 def test_market_3_clue_cards_match_params_py():
@@ -401,3 +463,29 @@ def test_market_3_clue_cards_match_params_py():
     for p in range(1, m.n_periods + 1):
         info, state = m.sequence_info[p - 1], m.sequence_states[p - 1]
         assert m.cards_for_period(p) == params.clue_cards(info, state), f"period {p}"
+
+
+def test_market_1_theory_uses_the_realized_sample_not_the_periods_card():
+    """A redrawn run can keep the paper's state for a period and still draw another sample.
+
+    Then matching on (info, state, period) picks up Table 1's card and scores the period
+    against a theory the run never faced. Measured on m1_random_0: periods 5, 6 and 8 all
+    took the wrong RE and two of the three flipped the separating flag, because their
+    redrawn states happened to coincide with Table 1's. Callers holding the realized card
+    must be able to say so, which is what the `card` argument is for.
+    """
+    m = MARKETS[1]
+    period = 6                                   # Table 1: state X, insider, and separating
+    state = m.sequence_states[period - 1]
+    paper_card = m.paper_clue_cards[period]       # '0000000011', posterior .555 -> separates
+    other_card = "0101001001"                     # 4 ones, posterior .149 -> does not
+
+    derived = m.theory_at("insider", state, period)[0]
+    assert derived == m.theory_price(period), "no card given: falls back to Table 1's"
+    assert derived["RE"] != derived["PI"]
+
+    with_paper = m.theory_at("insider", state, period, paper_card)[0]
+    with_other = m.theory_at("insider", state, period, other_card)[0]
+    assert with_paper == derived
+    assert with_other["RE"] == with_other["PI"], "a good sample leaves the models agreeing"
+    assert with_other != with_paper, "the realized card must change the prediction"

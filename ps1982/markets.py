@@ -226,33 +226,48 @@ class Market:
 
     # -------------------------------------------------------------- theory (vs Table 3)
 
-    def theory_price(self, period: int) -> dict[str, int]:
+    def theory_price(self, period: int, card: str | None = None) -> dict[str, int]:
         """RE and PI price predictions for a period.
 
-        RE  — the market aggregates information, so every agent effectively knows the
-              state and the units go to whoever values them most under it.
+        RE  — the market aggregates the information that is IN it, so every agent ends up
+              conditioning on the clue, and the units go to whoever values them most
+              under it.
         PI  — no aggregation: each agent values a certificate at its own expected
               dividend given its OWN information, and the price is the highest such
               valuation (the marginal buyer among 24 units and 2 units of endowment
               each is still within the top type's block).
-        The two coincide except where insiders are a minority AND the state is one the
+        The two coincide except where insiders are a minority AND the clue is one the
         uninformed would misprice — market 3's famous separating cell.
+
+        **RE conditions on the clue, not on the state.** For markets 2-5 that is the same
+        thing: the clue is a letter, so its posterior is degenerate on the realized state
+        and this reduces to `max(dividends[t][state])`, which is what those markets used
+        before and what Table 3 prints. Market 1's clue is a ten-draw sample, and there
+        the difference is the whole point — a market cannot reveal more than it knows, and
+        what its insiders know is a sample, not the state. Computing market 1's RE from the
+        state instead put it at 350 (state Y) where the sample's posterior says 320, and
+        inverted the SIGN of the prediction in the separating periods: the true RE lies
+        BELOW the uninformed 283.3 when the sample is bad news, not above it. That made
+        four of market 1's periods look separating where the paper counts two, taking its
+        footnote-6 total from 17 to 19. See test_separating_periods_match_footnote_6.
         """
         info = self.sequence_info[period - 1]
         state = self.sequence_states[period - 1]
-        re_price = max(self.dividends[t][state] for t in self.types)
 
+        if info == "none":
+            # nobody knows anything; both models are the prior
+            return {"RE": round(max(self.prior_ev.values())),
+                    "PI": round(max(self.prior_ev.values()))}
+
+        post = self.posterior_from_card(card if card is not None
+                                        else self.card_for(period, state))
+        informed = max(sum(post[s] * self.dividends[t][s] for s in self.states)
+                       for t in self.types)
+        re_price = informed
         if info == "all":
-            pi_price = re_price
-        elif info == "none":
-            pi_price = max(self.prior_ev.values())
-            re_price = pi_price          # nobody knows anything; both models are the prior
+            pi_price = informed          # everyone holds the clue, so PI collapses onto RE
         else:
-            post = self.posterior_from_card(self.card_for(period, state))
-            informed = max(sum(post[s] * self.dividends[t][s] for s in self.states)
-                           for t in self.types)
-            uninformed = max(self.prior_ev.values())
-            pi_price = max(informed, uninformed)
+            pi_price = max(informed, max(self.prior_ev.values()))
         return {"RE": round(re_price), "PI": round(pi_price)}
 
     def _argmax_types(self, value: dict[str, float]) -> str:
@@ -266,49 +281,62 @@ class Market:
         best = max(value.values())
         return "+".join(t for t in self.types if abs(value[t] - best) < 1e-9)
 
-    def theory_holder(self, period: int) -> dict[str, str]:
+    def theory_holder(self, period: int, card: str | None = None) -> dict[str, str]:
         """Which group the units should end up with, under each model."""
         info = self.sequence_info[period - 1]
         state = self.sequence_states[period - 1]
         if info == "none":
             best = self._argmax_types(self.prior_ev)
             return {"RE": best, "PI": best}
-        by_state = {t: float(self.dividends[t][state]) for t in self.types}
-        re_best = self._argmax_types(by_state)
-        if info == "all":
-            return {"RE": re_best, "PI": re_best}
-        post = self.posterior_from_card(self.card_for(period, state))
+        # Conditions on the clue, not the state — see theory_price. Degenerate for a
+        # lettered clue, so markets 2-5 keep scoring against `dividends[t][state]`.
+        post = self.posterior_from_card(card if card is not None
+                                        else self.card_for(period, state))
         ev_informed = {t: sum(post[s] * self.dividends[t][s] for s in self.states)
                        for t in self.types}
+        re_best = self._argmax_types(ev_informed)
+        if info == "all":
+            return {"RE": re_best, "PI": re_best}
         if max(ev_informed.values()) >= max(self.prior_ev.values()):
             pi = f"{self._argmax_types(ev_informed)}_insider"
         else:
             pi = f"{self._argmax_types(self.prior_ev)}_uninformed"
         return {"RE": re_best, "PI": pi}
 
-    def theory_at(self, info: str, state: str, period: int | None = None
-                  ) -> tuple[dict[str, int], dict[str, str]]:
+    def theory_at(self, info: str, state: str, period: int | None = None,
+                  card: str | None = None) -> tuple[dict[str, int], dict[str, str]]:
         """(price, holder) predictions for an (info, state) pair, period optional.
 
         The metrics index periods by (info, state) rather than by number, and a redrawn
         sequence can realize combinations this market's own Table 1 row never did. When a
         period IS given it is used, which matters only for market 1: its prediction depends
         on the actual clue sample drawn, not just on the state.
+
+        Which is why `card` exists. Matching on (info, state, period) is NOT enough to
+        identify market 1's sample: a redrawn run can land on the paper's state for a
+        period and still have drawn a different ten-mark sample, and then the paper's card
+        gets used and the period is scored against the wrong theory — measured on
+        m1_random_0, where periods 5, 6 and 8 all took the wrong RE and two of the three
+        flipped the separating flag. Callers that have the realized card (the log records
+        it) must pass it; deriving it from the period number is a fallback for callers that
+        do not, such as the fixed benchmark table.
         """
         if period is not None and 1 <= period <= self.n_periods \
                 and self.sequence_info[period - 1] == info \
                 and self.sequence_states[period - 1] == state:
-            return self.theory_price(period), self.theory_holder(period)
+            return self.theory_price(period, card), self.theory_holder(period, card)
         from dataclasses import replace
         n = max(self.n_periods, 1)
         probe = replace(self, sequence_info=(info,) * n, sequence_states=(state,) * n,
                         paper_clue_cards={})
         if probe.imperfect:
-            # No realized sample to condition on; use the paper's card for this period if
+            # Prefer the realized sample; fall back to the paper's card for this period if
             # there is one, else the prior — and say so rather than inventing a draw.
-            card = self.paper_clue_cards.get(period or -1)
-            probe = replace(probe, paper_clue_cards={1: card} if card else {},
-                            imperfect=bool(card))
+            clue = card if card is not None else self.paper_clue_cards.get(period or -1)
+            probe = replace(probe, paper_clue_cards={1: clue} if clue else {},
+                            imperfect=bool(clue))
+            if clue:
+                return probe.theory_price(1, clue), probe.theory_holder(1, clue)
         return probe.theory_price(1), probe.theory_holder(1)
 
     def holder_seats(self, spec: str) -> list[str]:
