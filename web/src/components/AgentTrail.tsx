@@ -5,9 +5,21 @@ import type { Ev } from '../types'
 import { TYPE_COLOR } from '../types'
 import { Empty, Panel, Tag, fmt } from './ui'
 
-/** Table 2, market 3: francs paid per certificate if X / if Y. Audience-only. */
-const DIVIDENDS: Record<string, [number, number]> = {
-  I: [400, 100], II: [300, 150], III: [125, 175],
+/**
+ * Francs paid per certificate in each state, for the seat's type. Audience-only.
+ *
+ * Read off the RUN, not off a copy kept here. This used to be market 3's table, hard-coded
+ * — `I: [400, 100]` — and shown beside every seat of every run, so a market-5 trail said a
+ * type I certificate pays 400 in X when market 5's highest type I dividend is 320, and it
+ * showed two states for a market that has three. `ps1982 backfill-meta` adds the block to
+ * runs written before it existed; a run without one renders nothing rather than a guess.
+ */
+function dividendsOf(meta: any, type: string | undefined):
+    { states: string[]; francs: number[] } | null {
+  const d = type ? meta?.market?.dividends?.[type] : null
+  const states: string[] | undefined = meta?.market?.states
+  if (!d || !states?.length) return null
+  return { states, francs: states.map((s) => d[s]) }
 }
 
 // ---------------------------------------------------------------- section frame
@@ -530,6 +542,8 @@ function StructuralStep({ d, t }: { d: DerivedState; t: Strings }) {
 
 export function AgentTrail({ d }: { d: DerivedState }) {
   const t = useT()
+  // Before the early returns: a hook cannot be called conditionally.
+  const meta = useStore((s) => s.meta)
   if (!d.turn || !d.turnEvents.length) return <Empty>{t.waiting}</Empty>
   if (d.turn.kind !== 'turn') return <StructuralStep d={d} t={t} />
 
@@ -544,7 +558,7 @@ export function AgentTrail({ d }: { d: DerivedState }) {
   const reached = (e: Ev | null | undefined) => at(e) <= d.subEventIndex
   const current = (...es: (Ev | null | undefined)[]) => es.some((e) => at(e) === d.subEventIndex)
 
-  const div = DIVIDENDS[st?.type ?? '']
+  const div = dividendsOf(meta, st?.type)
   const resultEvents = [...p.trades, ...p.reflections]
 
   return (
@@ -560,7 +574,7 @@ export function AgentTrail({ d }: { d: DerivedState }) {
                   style={{ background: TYPE_COLOR[st.type] }} />
             {st.type}
             {div && <span className="tabular-nums text-slate-400"
-                          title={`X / Y`}>({div[0]}/{div[1]})</span>}
+                          title={div.states.join(' / ')}>({div.francs.join('/')})</span>}
           </span>
         )}
         {st && (st.card

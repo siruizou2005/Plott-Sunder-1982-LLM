@@ -5,17 +5,23 @@ import { useT } from '../i18n'
 import { Tag } from './ui'
 
 /**
- * The market a run belongs to.
+ * The market a run belongs to, and whether it is one of Plott & Sunder's.
  *
  * Logs written before the engine recorded `market` are market 3 — the only market that
  * existed then — which is the same reading metrics.py applies to them, and a fact about
  * when they were written rather than a guess. Null until the run's meta arrives, so the
  * header can say "Plott & Sunder 1982" instead of claiming a market it does not yet know.
+ *
+ * `paper` comes from the run's own meta (`ps1982 backfill-meta` fills it in for older
+ * runs). Market 6 is the equidistant control of Table 7 and is OURS, so titling it
+ * "Plott & Sunder 1982 — Market 6" would credit them with a market they never ran. Meta
+ * that predates the field is from before market 6 existed, hence the `!== false`.
  */
-function marketOf(meta: any): number | null {
+function marketOf(meta: any): { n: number; paper: boolean } | null {
   if (!meta) return null
-  const m = meta?.config?.market
-  return typeof m === 'number' ? m : 3
+  const n = typeof meta?.market?.number === 'number' ? meta.market.number
+    : typeof meta?.config?.market === 'number' ? meta.config.market : 3
+  return { n, paper: meta?.market?.paper !== false }
 }
 
 export function Header() {
@@ -23,7 +29,8 @@ export function Header() {
   const { lang, setLang, connected, runs, runId, load, live, meta } = useStore()
 
   const market = marketOf(meta)
-  const title = market == null ? t.titleBare : t.title.replace('{n}', String(market))
+  const title = market == null ? t.titleBare
+    : (market.paper ? t.title : t.titleControl).replace('{n}', String(market.n))
   // The tab is how you tell two open viewers apart, so it carries the market too.
   useEffect(() => { document.title = title }, [title])
 

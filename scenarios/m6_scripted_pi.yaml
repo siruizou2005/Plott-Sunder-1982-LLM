@@ -1,0 +1,27 @@
+# Engine correctness gate for MARKET 6, the equidistant control. Zero API cost.
+# Prior-information baseline: agents never learn from price. Prices should sit at
+# 220 in BOTH informed states — the uninformed level — rather than moving 80 francs up in
+# X periods or 80 down in Y periods. This is the zero of the discovery measure on both
+# sides at once, which no market of the paper can provide.
+#
+# Run on the seed-42 draw, i.e. the market m6_ctrl_42 and m6_gem_quick actually face,
+# rather than on market 6's designed `paper_exact` sequence — a gate that passes on a
+# sequence nothing runs is a gate on the wrong market.
+run_name: m6_scripted_pi
+seed: 42
+sequence_preset: random_prior
+market: 6
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # market 3's design, which market 6 inherits
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: pi

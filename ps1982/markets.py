@@ -1,9 +1,16 @@
-"""All five Plott & Sunder (1982) markets as data.
+"""The five Plott & Sunder (1982) markets as data, plus our equidistant control.
 
 `params.py` holds market 3 as module-level constants — one roster, two states, twelve
 periods, one prior. The other four markets each break at least one of those assumptions
 (see docs/markets-1-to-5.md), so they cannot be expressed as a config override; the
 parameters have to become a value that code takes as an argument.
+
+`MARKETS[6]` is NOT one of the paper's. It is the control design of Table 7 in the
+companion paper, whose two informed-trade directions sit the same distance from the
+uninformed level — impossible anywhere in the published family, which needs p > 1/2.
+`PAPER_MARKETS` is what separates the two provenances, and every guard that asserts a
+fact about Plott & Sunder iterates that rather than `MARKETS`. See
+docs/market-6-control.md.
 
 This module is that value. It deliberately does NOT rewire anything yet: `params.py` is
 untouched and MARKETS[3] is asserted to reproduce it exactly (tests/test_markets.py), so
@@ -494,4 +501,47 @@ MARKETS: dict[int, Market] = {
         announce_no_info=True,
         note="Three states. Every X/Y assumption elsewhere in the codebase breaks here.",
     ),
+    # ------------------------------------------------------------ not the paper's
+    6: Market(
+        number=6,
+        # Everything structural is market 3's, unchanged: twelve investors, four per type,
+        # two insiders per type, twelve periods, blank cards rather than an announcement,
+        # and dividends-are-constant as common knowledge. Table 7 changes the dividends,
+        # the prior and nothing else, and this follows it — the fewer things that differ
+        # from the market the control is read against, the less the comparison has to
+        # carry. The one free parameter Table 7 does not state is franc_to_usd, taken
+        # from market 3 for the same reason.
+        n_per_type=4,
+        insiders_per_type=2,
+        states=("X", "Y"),
+        prior={"X": 0.6, "Y": 0.4},
+        dividends={"I": {"X": 300, "Y": 100},
+                   "II": {"X": 230, "Y": 130},
+                   "III": {"X": 225, "Y": 140}},
+        franc_to_usd=0.003,          # ours: market 3's, Table 7 does not state one
+        bingo_total=40,              # Table 7's own: "24 of 40 balls paying X"
+        # OURS, not a realized sequence from any paper — there is no Table 1 row for a
+        # market that was never run. Balanced on purpose: the eight insider periods split
+        # 4 X / 4 Y, and each side's mean ordinal position among them is 6.5, so neither
+        # side is systematically early or late in a session. The runs reported use
+        # `random_prior` instead (independent draws from the .6 prior); this sequence is
+        # what `paper_exact` yields for market 6 and what `validate` displays, and the
+        # preset's NAME is a misnomer here. Overall 7 X / 5 Y, against the 7.2 the prior
+        # would give in expectation.
+        sequence_states=tuple("XXXYYXYXXYXY"),
+        sequence_info=_info(12, [(3, 10, "insider"), (11, 12, "all")]),
+        announce_no_info=False,
+        note="NOT a Plott & Sunder market. The equidistant control of Table 7: prior "
+             "24/40 on X, so the informed-buy target (re 300) and the informed-sell "
+             "target (re 140) are both 80 francs from the uninformed level of 220. "
+             "Structure otherwise identical to market 3. The buy side is still "
+             "non-separating — equation (1) is independent of the parameters — so "
+             "equidistance removes the distance confound and not the blind spot.",
+    ),
 }
+
+# The markets that are Plott & Sunder's. Market 6 is ours, and a guard that asserts
+# something the PAPER says — which markets announced a no-information period, which one
+# ends uninformed, how many insiders each has — must iterate this and not `MARKETS`,
+# or a control design starts having to satisfy claims about an experiment it is not in.
+PAPER_MARKETS: tuple[int, ...] = (1, 2, 3, 4, 5)

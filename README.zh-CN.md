@@ -29,7 +29,7 @@ cd web && npm install && cd ..
 # 1. 不花钱 —— 检查参数和提示词
 ./.venv/bin/python -m ps1982 validate -s scenarios/m3_paper.yaml
 
-# 2. 不花钱 —— 381 项离线测试
+# 2. 不花钱 —— 441 项离线测试
 ./.venv/bin/pytest
 
 # 3. 不花钱 —— 引擎正确性闸门(见下)
@@ -52,9 +52,9 @@ Vertex(`GOOGLE_CLOUD_PROJECT` + ADC)。
 
 ---
 
-## 五个市场
+## 五个市场,外加一个控制市场
 
-它们是**五个不同的处理,不是五次重复**——人数、先验、状态数、信息精度、期数全都不同。
+论文的五个是**五个不同的处理,不是五次重复**——人数、先验、状态数、信息精度、期数全都不同。
 
 | 市场 | 期数 | 人数 | 状态 | 先验 | 信息设计 | 特殊之处 |
 |---:|---:|---:|---|---|---|---|
@@ -63,6 +63,12 @@ Vertex(`GOOGLE_CLOUD_PROJECT` + ADC)。
 | 3 | 12 | 12 | X/Y | .4 | 1-2 无 · 3-10 内幕 · 11-12 全知 | 论文分析最充分的市场,本项目的起点 |
 | 4 | 14 | 12 | X/Y | .4 | 1-4 无 · 5-13 内幕 · **14 无** | 唯一在**结尾**也有无信息期的市场 |
 | 5 | 13 | 12 | **X/Y/Z** | .35/.25/.40 | 1-3 无 · 4-13 内幕 | **三状态** |
+| 6 | 12 | 12 | X/Y | **.6** | 1-2 无 · 3-10 内幕 · 11-12 全知 | **不是论文的市场。**等距控制市场:知情者买入和卖出两个方向都离无知情者水平 80 francs |
+
+市场 6 是我们的,不是 Plott & Sunder 的。在他们的整个市场族里,知情者买入和卖出两个方向
+离无知情者水平的距离都不相等——市场 4 要求买方推 +165 francs、卖方只要 −35——任何归一化
+的度量都会因此偏向其中一侧。市场 6 只消掉这一点:买方仍然是非分离的,因为那个恒等式不依赖
+于参数。参数出处见 `docs/market-6-control.md`。
 
 每个参数的出处见 `docs/markets-1-to-5.md`;`ps1982/markets.py` 是它的可执行形式,
 `tests/test_markets.py` 把它逐格核回论文的 Table 1、Table 2、Table 3 和脚注 5。
@@ -112,7 +118,7 @@ make gate
 
 ```
 ps1982/
-  markets.py     五个市场的全部参数、线索模型、RE/PI 推导、重抽
+  markets.py     五个市场 + 控制市场的全部参数、线索模型、RE/PI 推导、重抽
   params.py      市场 3 的模块级常量,现在从 markets.py 派生
   config.py      pydantic scenario 配置 —— 每个处理变量都是一个开关
   book.py        挂单簿:校验、价格改进、交叉成交
@@ -127,8 +133,9 @@ runs/            见下
 web/server/      Express + WebSocket;读 runs/,控制回放节奏,跟随实时运行
   timeline.js    回放"一步"的唯一定义:一步 = 一个智能体的一个**回合**
 web/src/         React + ECharts + zustand;i18n.ts 存放全部中/英词条
-docs/            markets-1-to-5.md · paper-verification.md · design-deltas.md
-tests/           381 项离线测试,没有一项碰网络
+docs/            markets-1-to-5.md · market-6-control.md
+                 paper-verification.md · design-deltas.md
+tests/           441 项离线测试,没有一项碰网络
 archive/         四个被取代的旧目录,原样保留(见文末)
 ```
 

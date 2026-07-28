@@ -1,0 +1,28 @@
+# Engine correctness gate for MARKET 6, the equidistant control. Zero API cost.
+# Rational-expectations baseline: prices MUST reach 300 in X periods and 140 in Y
+# periods, with certificates in the RE-predicted hands (type I on X, type III on Y). Both
+# targets are exactly 80 francs from the uninformed 220, which is the whole point of
+# market 6 — if the engine cannot hit them symmetrically with agents that know the answer,
+# an asymmetry measured on LLM agents is the engine's, not the market's.
+#
+# Run on the seed-42 draw, i.e. the market m6_ctrl_42 and m6_gem_quick actually face,
+# rather than on market 6's designed `paper_exact` sequence — a gate that passes on a
+# sequence nothing runs is a gate on the wrong market.
+run_name: m6_scripted_re
+seed: 42
+sequence_preset: random_prior
+market: 6
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # market 3's design, which market 6 inherits
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: re

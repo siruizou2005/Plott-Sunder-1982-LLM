@@ -35,7 +35,7 @@ cp .env.example .env          # add your own keys
 # 1. free — check parameters and rendered prompts
 ./.venv/bin/python -m ps1982 validate -s scenarios/m3_paper.yaml
 
-# 2. free — 381 offline tests
+# 2. free — 441 offline tests
 ./.venv/bin/pytest
 
 # 3. free — the engine correctness gate (see below); run this first
@@ -55,9 +55,9 @@ cd web && npm start           # http://127.0.0.1:8100
 
 ---
 
-## The five markets
+## The five markets, plus a control
 
-They are five **treatments, not five repetitions** — roster size, prior, number of states,
+The paper's five are five **treatments, not five repetitions** — roster size, prior, number of states,
 information precision and period count all differ.
 
 | Market | Periods | Agents | States | Prior | Information design | What makes it different |
@@ -67,10 +67,18 @@ information precision and period count all differ.
 | 3 | 12 | 12 | X/Y | .4 | 1-2 none · 3-10 insider · 11-12 all | The paper's most-analysed market, and where this codebase started |
 | 4 | 14 | 12 | X/Y | .4 | 1-4 none · 5-13 insider · **14 none** | The only market with a no-information period at the **end** as well as the start |
 | 5 | 13 | 12 | **X/Y/Z** | .35/.25/.40 | 1-3 none · 4-13 insider | **Three states** |
+| 6 | 12 | 12 | X/Y | **.6** | 1-2 none · 3-10 insider · 11-12 all | **Not the paper's.** The equidistant control: both informed-trade directions are 80 francs from the uninformed level |
 
-Every parameter's provenance is in [`docs/markets-1-to-5.md`](docs/markets-1-to-5.md).
+Every parameter's provenance is in [`docs/markets-1-to-5.md`](docs/markets-1-to-5.md), and
+market 6's in [`docs/market-6-control.md`](docs/market-6-control.md).
 `ps1982/markets.py` is that document as executable data, and `tests/test_markets.py` checks
 it back against the paper's Table 1, Table 2, Table 3 and footnote 5, cell by cell.
+
+Market 6 is ours, not Plott & Sunder's. Everywhere in their family the two informed-trade
+directions sit at different distances from the uninformed level — market 4 asks the buy
+side for +165 francs and the sell side for −35 — so a normalised measure flatters one side.
+Market 6 removes that, and only that: the buy side stays non-separating, because that
+identity does not depend on the parameters.
 
 **The theory predictions are derived, not transcribed.** `Market.theory_price()` computes
 RE and PI from the dividends and the prior; the result matches every cell the paper prints
@@ -122,7 +130,7 @@ both models, so a run that lands on one of them is telling you something about t
 
 ```
 ps1982/
-  markets.py     all five markets: parameters, clue model, RE/PI derivation, redraw
+  markets.py     the five markets + the control: parameters, clue model, RE/PI derivation
   params.py      market 3 as module-level constants, now derived from markets.py
   config.py      pydantic scenario config — every treatment variable is a flag
   book.py        the standing-quote book: validation, price improvement, crossing
@@ -132,13 +140,14 @@ ps1982/
   agents/        llm_agent.py · scripted.py (zi / pi / re baselines)
   prompts/       instructions.py (Instruction Set 2, adapted) · brief.py · schemas.py
   llm/           openai_compat.py (DeepSeek / Bailian) · gemini.py (Vertex) · base.py
-scenarios/       one YAML per experimental arm, 32 of them
+scenarios/       one YAML per experimental arm, 43 of them
 runs/            not in git — see below
 web/server/      Express + WebSocket; reads runs/, paces replay, tails live runs
   timeline.js    the only definition of a playback step: one step = one agent's TURN
 web/src/         React + ECharts + zustand; i18n.ts holds the whole 中/EN dictionary
-docs/            experiments.md · markets-1-to-5.md · paper-verification.md · design-deltas.md
-tests/           381 offline tests; nothing here touches the network
+docs/            experiments.md · markets-1-to-5.md · market-6-control.md
+                 paper-verification.md · design-deltas.md
+tests/           441 offline tests; nothing here touches the network
 ```
 
 ### runs/ is grouped by purpose

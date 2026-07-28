@@ -260,7 +260,13 @@ export const useStore = create<Store>((set, get) => ({
           set({
             runId: m.runId, meta: m.meta, metrics: m.metrics, live: m.live,
             events: [], timeline: m.timeline ?? [], periods: m.periods ?? [],
-            cursor: 0, sub: 0, seatTypes: {}, theory: THEORY_MARKET3,
+            cursor: 0, sub: 0, seatTypes: {},
+            // The market-3 fallback is for logs written before the engine recorded a
+            // theory at all, and every one of those IS market 3. Seeding it for another
+            // market would draw market 3's RE line — 400 and 175 — over a market with
+            // different dividends for as long as it takes session_start to arrive in the
+            // first batch. Empty is the honest seed there.
+            theory: (m.meta?.market?.number ?? 3) === 3 ? THEORY_MARKET3 : {},
             // Event indices are per-run, so a stale detail would attach the wrong prompt
             // to the right-looking turn.
             details: {}, detailAsked: {},

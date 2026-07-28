@@ -13,6 +13,9 @@ export type Lang = 'en' | 'zh'
 export interface Strings {
   /** Carries a `{n}` placeholder for the market number; see Header. */
   title: string
+  /** Same placeholder, for a market that is NOT one of Plott & Sunder's — market 6, the
+   *  equidistant control of Table 7. Titling it with theirs would misattribute it. */
+  titleControl: string
   /** Used until a run's meta has arrived and the market number is known. */
   titleBare: string
   subtitle: string
@@ -206,6 +209,7 @@ export interface Strings {
 
 const en: Strings = {
   title: 'Plott & Sunder 1982 — Market {n}',
+  titleControl: 'Equidistant control — Market {n}',
   titleBare: 'Plott & Sunder 1982',
   subtitle: 'Experimental security market with insider information · LLM agents',
   pickRun: 'Select a run',
@@ -382,6 +386,7 @@ const en: Strings = {
 
 const zh: Strings = {
   title: 'Plott & Sunder 1982 —— 市场 {n}',
+  titleControl: '等距控制市场 —— 市场 {n}',
   titleBare: 'Plott & Sunder 1982',
   subtitle: '含内幕信息的实验性证券市场 · LLM agent 复现',
   pickRun: '选择一次运行',

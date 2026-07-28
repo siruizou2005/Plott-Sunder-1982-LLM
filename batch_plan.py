@@ -78,6 +78,38 @@ def rounds_arm():
             for r in ROUNDS_ARM for arm, seed in sorted(ROUNDS_ARM_SEEDS.items())]
 
 
+# The control arm. Market 6 is the equidistant control of Table 7 — not one of Plott &
+# Sunder's — where the informed-buy and informed-sell targets are both 80 francs from the
+# uninformed level, so a difference between the two sides cannot be the distance. Three
+# `random_prior` sessions on DeepSeek plus a five-period Gemini prefix of the first.
+#
+# Deliberately NOT folded into plan(), for the same reason as the rounds arm: those 26
+# sessions are the replication of a published experiment, and this is a market that
+# experiment does not contain. Folding it in would also renumber nothing but would make
+# `batch_plan.py` claim market 6 is one of the paper's.
+#
+# The seeds are the user's 42/43/44 rather than the BASE_SEED scheme, which keeps them
+# unambiguously outside it. Checked before running rather than chosen for it: they draw 13
+# buy-side and 11 sell-side insider periods between them, and one full-information period
+# of each state per session.
+CONTROL_ARM_SEEDS = (42, 43, 44)
+CONTROL_SCENARIO = "scenarios/m6_control.yaml"
+CONTROL_GEMINI = ("control/m6_gem_quick", "scenarios/m6_gemini_quick.yaml", 42)
+
+
+def control_arm(with_gemini: bool = True):
+    """[(name, scenario, seed)] — the equidistant control, market 6.
+
+    The Gemini session reuses seed 42 and truncates to five periods, so it is a literal
+    PREFIX of `control/m6_ctrl_42`: same draw, same round order, same seat->name map. Any
+    difference over those five periods is the model. Same pairing logic as m3_gem_paper.
+    """
+    out = [(f"control/m6_ctrl_{s}", CONTROL_SCENARIO, s) for s in CONTROL_ARM_SEEDS]
+    if with_gemini:
+        out.append(CONTROL_GEMINI)
+    return out
+
+
 def pending():
     """Markets specified but not yet runnable — printed so the gap is never invisible."""
     return [m for m, (impl, _, _) in sorted(MARKETS.items()) if not impl]
@@ -87,6 +119,12 @@ if __name__ == "__main__":
     if "--rounds-arm" in sys.argv:
         for name, sc, seed, r in rounds_arm():
             print(f"{name}\t{sc}\t{seed}\t{r}")
+        sys.exit(0)
+    if "--control-arm" in sys.argv:
+        # --no-gemini leaves the three DeepSeek sessions, which is what the cloud box runs;
+        # the Gemini prefix runs on the laptop against Vertex and is launched separately.
+        for name, sc, seed in control_arm(with_gemini="--no-gemini" not in sys.argv):
+            print(f"{name}\t{sc}\t{seed}")
         sys.exit(0)
     show = "--show" in sys.argv
     only = [int(a[2:]) for a in sys.argv[1:] if a.startswith("-m") and a[2:].isdigit()]

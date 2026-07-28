@@ -1,0 +1,68 @@
+# Market 6: the EQUIDISTANT CONTROL of Table 7. Not one of Plott & Sunder's markets.
+#
+# Everywhere else in the design family the two informed-trade directions sit at different
+# distances from the uninformed level — market 4 asks the buy side for +165 francs and the
+# sell side for -35 — so any normalised measure flatters the sell side. Here both are 80:
+#
+#     prior           24 of 40 balls pay X          v-bar = 220 (type I is marginal)
+#     informed buy    state X   re = 300   +80      NON-separating (equation (1))
+#     informed sell   state Y   re = 140   -80      separating
+#
+# Structure is market 3's, unchanged: 12 investors, 4 per type, 2 insiders per type,
+# 12 periods, none 1-2 / insider 3-10 / all 11-12, blank cards rather than an announcement.
+# Only the dividends and the prior move. See docs/market-6-control.md.
+#
+# `random_prior` rather than `paper_exact`: market 6 has no Table 1 row to be exact to.
+# The seed draws each period's state from the .6 prior with the information design held
+# fixed, so the three reported sessions are three independent realisations. Seeds 42/43/44
+# give 13 buy-side and 11 sell-side insider periods between them — checked before running,
+# not chosen for it.
+run_name: m6_control
+seed: 42
+sequence_preset: random_prior
+market: 6
+sessions: 1
+max_rounds_per_period: 3
+# Three sessions x 12 workers = 36 in flight, a structural ceiling against Bailian's
+# tolerated 50-80. Measured mean is 1.9 per session. See bailian_paper.yaml.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # market 3's design, which this inherits: not told
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing. Measured reasoning
+    # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
+    max_output_tokens: 8192
+    # 8192, not 512: the cap was dead config until f27fec7/f789d04, and the first run
+    # after it reached the provider truncated 29% of broadcasts to an empty string.
+    # See scenarios/m3_random.yaml for the measured distribution behind this number.
+    broadcast_max_output_tokens: 8192
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    # Reasoning shares this budget. At 400 (and even at 1200) the note itself was
+    # truncated away: 6 of 12 year-end notes came back empty on the probe run.
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

@@ -1,13 +1,16 @@
-"""The five markets, checked against what the paper prints.
+"""The markets, checked against what they claim to be.
 
-Two kinds of check, and the distinction matters:
+Three kinds of check, and the distinctions matter:
 
   * Against the PAPER — expected dividends (Table 2's rightmost column), the market-1
     posteriors (Table 1), period counts and information spans (Table 1, body text).
-    These catch a transcription slip in markets.py.
+    These catch a transcription slip in markets.py, and they run over PAPER_MARKETS.
   * Against params.py — market 3 must come out byte-identical to the constants already
     running. This is what licenses rewiring ~200 call sites onto Market later: if the new
     representation reproduces the old one exactly, the rewiring cannot change a result.
+  * Against TABLE 7 — market 6 is ours, the equidistant control, so every claim made for
+    it is recomputed here rather than asserted. That section also pins how far each
+    published market asks each side to move, which is the confound the control removes.
 """
 
 from __future__ import annotations
@@ -15,9 +18,14 @@ from __future__ import annotations
 import pytest
 
 from ps1982 import params
-from ps1982.markets import MARKETS, sample_posterior
+from ps1982.markets import MARKETS, PAPER_MARKETS, sample_posterior
 
 ALL = list(MARKETS.values())
+# The paper's own five. A guard that asserts something Plott & Sunder DID — which markets
+# announced a no-information period, which one ends uninformed — iterates this: market 6
+# is our control design and is not in that experiment, so making it satisfy a claim about
+# the experiment would be asserting the wrong thing about it.
+PAPER = [MARKETS[n] for n in PAPER_MARKETS]
 
 
 # ---------------------------------------------------------------- Table 2
@@ -87,7 +95,7 @@ def test_information_design(number, spans):
 
 def test_market_4_is_the_only_one_ending_uninformed():
     """The body text singles this out; it is easy to lose in a span table."""
-    for m in ALL:
+    for m in PAPER:
         ends_none = m.sequence_info[-1] == "none"
         assert ends_none == (m.number == 4), f"market {m.number}"
 
@@ -144,12 +152,12 @@ def test_only_market_1_is_imperfect():
 
 
 def test_no_information_periods_were_announced_in_markets_1_2_5():
-    for m in ALL:
+    for m in PAPER:
         assert m.announce_no_info == (m.number in (1, 2, 5)), f"market {m.number}"
 
 
 def test_only_market_1_lacks_the_constant_dividends_fact():
-    for m in ALL:
+    for m in PAPER:
         assert m.dividends_constant_is_common_knowledge == (m.number != 1)
 
 
@@ -378,10 +386,14 @@ def test_separating_periods_match_footnote_6(number, periods):
 
 
 def test_footnote_6_totals_seventeen():
-    """The paper's own total, which only comes out right if every market agrees."""
+    """The paper's own total, which only comes out right if every market agrees.
+
+    Over PAPER_MARKETS, not MARKETS: 17 is a count of Plott & Sunder's periods, and our
+    control market's separating periods are not part of it.
+    """
     total = sum(len([p for p in range(1, MARKETS[n].n_periods + 1)
                      if MARKETS[n].theory_price(p)["RE"] != MARKETS[n].theory_price(p)["PI"]])
-                for n in MARKETS)
+                for n in PAPER_MARKETS)
     assert total == 17, f"derived {total} price-separating periods; the paper reports 17"
 
 
@@ -489,3 +501,212 @@ def test_market_1_theory_uses_the_realized_sample_not_the_periods_card():
     assert with_paper == derived
     assert with_other["RE"] == with_other["PI"], "a good sample leaves the models agreeing"
     assert with_other != with_paper, "the realized card must change the prediction"
+
+
+# ---------------------------------------------------------------- Table 7: the control
+#
+# Market 6 is OURS, not Plott & Sunder's: the equidistant control of Table 7. These guards
+# are what make it a control rather than a sixth guess — every claim the table makes about
+# it is recomputed here from the dividends and the prior, exactly as TABLE_3 does for the
+# paper's four.
+
+M6 = MARKETS[6]
+
+
+def test_market_6_expected_dividends_match_table_7():
+    """Table 7's rightmost column, recomputed. 220 (marginal) / 190 / 191."""
+    ev = M6.prior_ev
+    for t, want in {"I": 220.0, "II": 190.0, "III": 191.0}.items():
+        assert abs(ev[t] - want) < 1e-9, f"type {t}: {ev[t]} != {want}"
+    # "a unique marginal type" — the design criterion the table says it was selected for.
+    assert sorted(ev.values())[-1] > sorted(ev.values())[-2], "marginal type must be unique"
+    assert M6._argmax_types(ev) == "I"
+
+
+def test_market_6_is_equidistant():
+    """The whole point: both informed-trade directions are 80 francs from v-bar.
+
+    Throughout the rest of the design family they are not — market 4's buy side must move
+    +165 and its sell side only -35 — so any normalised measure flatters the sell side.
+    """
+    vbar = max(M6.prior_ev.values())
+    re_buy = M6.theory_at("insider", "X")[0]["RE"]
+    re_sell = M6.theory_at("insider", "Y")[0]["RE"]
+    assert (vbar, re_buy, re_sell) == (220.0, 300, 140)
+    assert re_buy - vbar == vbar - re_sell == 80.0
+
+
+# Every published market's informed-trade sides, as francs from the uninformed level,
+# computed once here so the two guards below argue from the same numbers. A lettered clue
+# throughout, which is exact for markets 2-5 and is NOT market 1's model — see below.
+#   {market: {state: signed distance from v-bar}}
+PAPER_DISTANCES = {
+    1: {"X": +16.67, "Y": +66.67},
+    2: {"X": -26.67, "Y": +83.33},
+    3: {"X": +180.0, "Y": -45.0},
+    4: {"X": +165.0, "Y": -35.0},
+    5: {"X": -32.5, "Y": +32.5, "Z": +107.5},
+}
+
+
+@pytest.mark.parametrize("number,want", sorted(PAPER_DISTANCES.items()))
+def test_how_far_each_published_market_asks_each_side_to_move(number, want):
+    """The distance confound, pinned market by market rather than described.
+
+    This is what the Table 7 control exists to remove, so the numbers it is measured
+    against have to be fixed somewhere a change would break.
+    """
+    m = MARKETS[number]
+    vbar = max(m.prior_ev.values())
+    for st, d in want.items():
+        got = max(m.dividends[t][st] for t in m.types) - vbar
+        assert abs(got - d) < 0.01, f"market {number} state {st}: {got:+.2f} != {d:+.2f}"
+
+
+def test_which_published_markets_proposition_1_actually_rules_out():
+    """Proposition 1 is a TWO-STATE result, and the family is not uniformly two-state.
+
+    It says equidistance needs p(buy state) > 1/2, so it rules out exactly those two-state
+    markets whose buy state is at or below 1/2 — markets 3 and 4, and only those. It does
+    NOT rule out markets 1 and 2, whose buy state is Y at 2/3, and it does not reach market
+    5 at all, which has three states and whose v-bar mixes all of them.
+
+    Getting this wrong is easy in the direction that matters: the buy state is Y, not X, in
+    markets 1 and 2, and in market 5 the sell state is X while BOTH Y and Z are buy states.
+    Reading 'the buy state' as 'X' in every market gives priors of 1/3, 1/3, .4, .4, .35 —
+    all at or below 1/2 — and the false conclusion that the proposition excludes the whole
+    family.
+    """
+    two_state = [m for m in PAPER if len(m.states) == 2]
+    ruled_out = []
+    for m in two_state:
+        vbar = max(m.prior_ev.values())
+        buy = [s for s in m.states if max(m.dividends[t][s] for t in m.types) > vbar]
+        if all(m.prior[s] <= 0.5 for s in buy):
+            ruled_out.append(m.number)
+    assert ruled_out == [3, 4]
+    assert MARKETS[2].prior["Y"] > 0.5 and PAPER_DISTANCES[2]["Y"] > 0, "m2 buys on Y at 2/3"
+    assert len(MARKETS[5].states) == 3, "proposition 1's two-state hypothesis excludes m5"
+
+
+def test_market_5_already_contains_an_equidistant_pair():
+    """And it is not ruled out by anything: market 5's X and Y sit +/- 32.5 from v-bar.
+
+    Found by this test file, not by the paper, which states that no market in the published
+    family can be equidistant. That statement is right about the two-state markets the
+    proposition covers and wrong about market 5, where v-bar = 212.5 mixes three states and
+    lands exactly halfway between the sell-side X (180) and the buy-side Y (245). Market 5
+    supplies a third of all buyer-side periods and its five completed sessions therefore
+    already hold an equidistant buy-vs-sell comparison — on its X and Y periods only, since
+    Z is +107.5 away and is not part of the pair.
+
+    This does not make the Table 7 control redundant: market 5's uninformed level lies
+    inside the competitive interval on both of its buy states, so no competitive force
+    pushes its price up at all, which is a separate defect the control does not share.
+    """
+    m = MARKETS[5]
+    vbar = max(m.prior_ev.values())
+    sell = vbar - max(m.dividends[t]["X"] for t in m.types)
+    buy = max(m.dividends[t]["Y"] for t in m.types) - vbar
+    assert sell == buy == 32.5, "exact, not approximate"
+    assert max(m.dividends[t]["Z"] for t in m.types) - vbar == 107.5, "Z is not in the pair"
+    # market 6 is the only market that is equidistant on ALL of its informed states
+    assert {abs(max(MARKETS[6].dividends[t][s] for t in MARKETS[6].types)
+                - max(MARKETS[6].prior_ev.values())) for s in MARKETS[6].states} == {80.0}
+
+
+def test_market_6_buy_side_is_still_non_separating():
+    """Equation (1) is independent of the parameters, so equidistance does not fix it.
+
+    re != pi iff the informed profit by selling — the identity that makes the classic price
+    test a test of informed selling only. If the control accidentally separated on the buy
+    side it would not be a control for this paper's claim, it would be a different market.
+    """
+    vbar = max(M6.prior_ev.values())
+    for st in M6.states:
+        price = M6.theory_at("insider", st)[0]
+        informed_sell = price["RE"] < vbar
+        assert (price["RE"] != price["PI"]) == informed_sell, f"state {st}"
+
+
+def test_market_6_prior_is_a_whole_number_of_balls():
+    """Table 7 states the cage itself: 24 of 40 balls pay X. The prompt has no other way
+    to express a prior — the word 'probability' never appears — so this is load-bearing."""
+    assert M6.bingo_total == 40
+    assert M6.cage_ranges == [("X", 1, 24), ("Y", 25, 40)]
+
+
+def test_market_6_keeps_market_3s_structure():
+    """Table 7 was "selected to keep every other feature of the family intact", and so is
+    this: the control differs from market 3 in the dividends, the prior and nothing else."""
+    m3 = MARKETS[3]
+    assert (M6.n_agents, M6.n_per_type, M6.insiders_per_type) == (12, 4, 2)
+    assert M6.insiders == m3.insiders
+    assert M6.states == m3.states
+    assert M6.sequence_info == m3.sequence_info
+    assert M6.n_periods == m3.n_periods == 12
+    assert M6.announce_no_info is m3.announce_no_info is False
+    assert M6.dividends_constant_is_common_knowledge is True
+    assert M6.imperfect is False
+    assert M6.franc_to_usd == m3.franc_to_usd
+
+
+def test_market_6_designed_sequence_is_balanced_across_the_two_sides():
+    """Our sequence, so it has to justify itself. Four insider periods per side, and the
+    same mean ordinal position on each, so neither side is systematically early or late.
+
+    `paper_exact` is a misnomer for a market with no paper; the reported runs use
+    `random_prior`, and this sequence is what `validate` and the scripted gate display.
+    """
+    insider = [(p, M6.sequence_states[p - 1]) for p in range(1, M6.n_periods + 1)
+               if M6.sequence_info[p - 1] == "insider"]
+    by_side = {st: [p for p, s in insider if s == st] for st in M6.states}
+    assert len(by_side["X"]) == len(by_side["Y"]) == 4
+    order = {st: [i for i, (_, s) in enumerate(insider) if s == st] for st in M6.states}
+    assert sum(order["X"]) / 4 == sum(order["Y"]) / 4
+    # one full-information period per state, so the institutional baseline of Section 3
+    # gets a measurable gap on both sides at equal distance
+    full = [M6.sequence_states[p - 1] for p in range(1, M6.n_periods + 1)
+            if M6.sequence_info[p - 1] == "all"]
+    assert sorted(full) == ["X", "Y"]
+
+
+def test_market_6_is_not_one_of_the_papers():
+    """Provenance, asserted rather than commented: the tables that pin Plott & Sunder must
+    not silently acquire a row for a market they never printed."""
+    assert 6 not in PAPER_MARKETS
+    assert 6 not in TABLE_3 and 6 not in FOOTNOTE_6
+    assert set(MARKETS) == set(PAPER_MARKETS) | {6}
+    assert "NOT a Plott & Sunder market" in M6.note
+
+
+def test_market_6_redraw_keeps_the_information_design_and_the_prior():
+    """The reported runs are `random_prior`, so the redraw is the experiment, not a detail."""
+    for seed in (42, 43, 44):
+        r = M6.redrawn(seed)
+        assert r.sequence_info == M6.sequence_info
+        assert r.prior == M6.prior and r.dividends == M6.dividends
+        assert set(r.sequence_states) <= {"X", "Y"}
+        assert r.redrawn(seed).sequence_states == r.sequence_states
+
+
+def test_the_meta_block_the_viewer_reads_comes_from_this_module():
+    """`ps1982 backfill-meta` and every new run write these; the viewer draws them.
+
+    The viewer used to keep its own copy of market 3's dividend table and show it beside
+    every seat of every run. This is the contract that replaced it, and it has to hold for
+    all six markets — including market 5, whose three states broke the old two-element
+    shape, and market 6, which must not be labelled as Plott & Sunder's.
+    """
+    from ps1982.cli import _market_block
+    for m in ALL:
+        b = _market_block(m)
+        assert b["number"] == m.number
+        assert b["paper"] == (m.number in PAPER_MARKETS)
+        assert b["states"] == list(m.states)
+        assert set(b["dividends"]) == set(m.types)
+        for t in m.types:
+            assert b["dividends"][t] == {s: m.dividends[t][s] for s in m.states}
+        assert b["n_agents"] == m.n_agents and b["bingo_total"] == m.bingo_total
+    assert _market_block(MARKETS[5])["states"] == ["X", "Y", "Z"]
+    assert _market_block(MARKETS[6])["paper"] is False

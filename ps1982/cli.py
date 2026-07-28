@@ -128,6 +128,30 @@ def _truncate_to_checkpoint(log_path: Path, next_event_id: int) -> int:
     return dropped
 
 
+def _market_block(mkt) -> dict:
+    """The market facts the viewer displays, taken from the Market this run IS.
+
+    The viewer used to carry its own copy of market 3's dividend table and show it beside
+    every seat of every run, so a market-5 trail said a type I certificate pays 400 in X
+    when market 5 has no state that pays a type I more than 320. Deriving it here means
+    there is one table, in markets.py, and a run carries its own.
+
+    Audience-only, like the RE/PI predictions already in `session_start`: nothing here
+    reaches a prompt. `paper` is what stops the header calling our control market one of
+    Plott & Sunder's.
+    """
+    from .markets import PAPER_MARKETS
+    return {"number": mkt.number,
+            "paper": mkt.number in PAPER_MARKETS,
+            "states": list(mkt.states),
+            "n_agents": mkt.n_agents,
+            "dividends": {t: {s: mkt.dividends[t][s] for s in mkt.states}
+                          for t in mkt.types},
+            "prior_ev": {t: round(v, 2) for t, v in mkt.prior_ev.items()},
+            "bingo_total": mkt.bingo_total,
+            "note": mkt.note}
+
+
 def _write_meta(path, *, scenario, cfg, stamp, status, summaries) -> None:
     """Written at START and rewritten after every period.
 
@@ -138,6 +162,7 @@ def _write_meta(path, *, scenario, cfg, stamp, status, summaries) -> None:
     meta = {"scenario": scenario, "run_name": cfg.run_name, "stamp": stamp,
             "status": status,
             "config": json.loads(cfg.model_dump_json()),
+            "market": _market_block(cfg.market_spec),
             "sequence": {"name": cfg.sequence.name, "states": list(cfg.sequence.states),
                          "info": list(cfg.sequence.info), "note": cfg.sequence.note},
             "summaries": summaries,
@@ -296,6 +321,63 @@ def summary(run: str = typer.Option(..., "--run", "-r")) -> None:
         if tot.get("cost_usd") is not None:
             console.print(f"  {tot['calls']} model calls, ${tot['cost_usd']}, "
                           f"{tot['wall_clock_s']}s")
+
+
+@app.command("backfill-meta")
+def backfill_meta(runs_dir: str = typer.Option("runs", "--runs"),
+                  dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+    """Add the `market` block to meta.json files written before it existed.
+
+    Every completed run predates it, and without it the viewer has no way to know a run's
+    dividends except by keeping its own copy of one market's — which is what it was doing,
+    and which was wrong for every market but 3. The block is derived from the run's own log
+    (`session_start.market` plus the realized sequence), the same reconstruction the metrics
+    use, so this reads facts out of the run rather than deciding them.
+    """
+    from .metrics import _market_for
+    root = Path(runs_dir)
+    done = skipped = failed = 0
+    for meta_path in sorted(root.rglob("*.meta.json")):
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            console.print(f"[red]unreadable[/red] {meta_path}: {exc}")
+            failed += 1
+            continue
+        if isinstance(meta.get("market"), dict):
+            skipped += 1
+            continue
+        log_path = meta_path.with_suffix("").with_suffix(".jsonl")
+        start = None
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    if not line.strip():
+                        continue
+                    ev = json.loads(line)
+                    if ev.get("type") == "session_start":
+                        start = ev.get("payload")
+                        break
+        if start is None:
+            # No log, or a log with no session_start: the config still names the market,
+            # and a market number with no realized sequence is enough for the dividends.
+            number = (meta.get("config") or {}).get("market", 3)
+            from .markets import MARKETS
+            mkt = MARKETS.get(number)
+            if mkt is None:
+                console.print(f"[yellow]skip[/yellow] {meta_path}: unknown market {number}")
+                failed += 1
+                continue
+        else:
+            mkt = _market_for(start)
+        meta["market"] = _market_block(mkt)
+        if dry_run:
+            console.print(f"  would add market {mkt.number} to {meta_path}")
+        else:
+            write_checkpoint(str(meta_path), meta)
+        done += 1
+    console.print(f"{'would update' if dry_run else 'updated'} {done}, "
+                  f"already current {skipped}, failed {failed}")
 
 
 if __name__ == "__main__":

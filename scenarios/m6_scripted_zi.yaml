@@ -1,0 +1,26 @@
+# Engine correctness gate for MARKET 6, the equidistant control. Zero API cost.
+# Zero-intelligence baseline: random quotes inside the budget constraint. Whatever
+# structure survives here is the institution's, not the agents'. On an equidistant market
+# it is also the clean test of whether the double auction itself has a directional bias.
+#
+# Run on the seed-42 draw, i.e. the market m6_ctrl_42 and m6_gem_quick actually face,
+# rather than on market 6's designed `paper_exact` sequence — a gate that passes on a
+# sequence nothing runs is a gate on the wrong market.
+run_name: m6_scripted_zi
+seed: 42
+sequence_preset: random_prior
+market: 6
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # market 3's design, which market 6 inherits
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: zi

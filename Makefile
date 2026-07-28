@@ -1,7 +1,7 @@
 PY := ./.venv/bin/python
 SC := scenarios
 
-.PHONY: setup test validate gate smoke run metrics web dev-api dev-ui clean
+.PHONY: setup test validate gate gate6 smoke run metrics web dev-api dev-ui clean
 
 setup:
 	python3 -m venv .venv
@@ -20,6 +20,15 @@ gate:
 	@for k in re pi zi; do \
 		echo "=== scripted $$k ==="; \
 		$(PY) -m ps1982 run --scenario $(SC)/market3_scripted_$$k.yaml 2>&1 | tail -20; \
+	done
+
+## The same gate on market 6, the equidistant control, and on the seed the control arm
+## actually runs. Separate from `gate` rather than folded into it: market 6 is not one of
+## the paper's, so a red `gate` must keep meaning "the replication is broken".
+gate6:
+	@for k in re pi zi; do \
+		echo "=== market 6, scripted $$k ==="; \
+		$(PY) -m ps1982 run --scenario $(SC)/m6_scripted_$$k.yaml 2>&1 | tail -20; \
 	done
 
 smoke:
