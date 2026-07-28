@@ -187,6 +187,7 @@ export interface Strings {
   userPrompt: string
   completionLabel: string
   reasoningLabel: string
+  loadingDetail: string
   noBrief: string
   noBroadcast: string
   noAction: string
@@ -360,6 +361,7 @@ const en: Strings = {
   userPrompt: 'user',
   completionLabel: 'completion',
   reasoningLabel: 'chain of thought',
+  loadingDetail: 'loading…',
   noBrief: 'Scripted agent — the engine builds no briefing for it.',
   noBroadcast: 'This action never went to broadcast.',
   noAction: 'This turn produced no market action.',
@@ -533,6 +535,7 @@ const zh: Strings = {
   userPrompt: 'user',
   completionLabel: '模型输出',
   reasoningLabel: '思维链',
+  loadingDetail: '加载中…',
   noBrief: '脚本化 agent，引擎不为它生成简报。',
   noBroadcast: '该行动未进入广播。',
   noAction: '本回合没有产生市场行动。',

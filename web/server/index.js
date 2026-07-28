@@ -13,19 +13,36 @@ import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import chokidar from 'chokidar'
 
-import { RUNS_DIR, buildTimeline, currentRun, listRuns, logPath, periodIndex, readEvents,
-         readMeta, readMetrics } from './runs.js'
+import { RUNS_DIR, buildTimeline, currentRun, listRuns, periodIndex, readEvents,
+         readLinesAt, readMeta, readMetrics } from './runs.js'
+import { HEAVY, cacheStats, lite, loadRun } from './logcache.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(__dirname, '..', 'dist')
 const HOST = process.env.PS1982_HOST || '127.0.0.1'
 const PORT = Number(process.env.PS1982_PORT || 8100)
 const CHUNK = 400
+/** Model calls one `detail` request may fetch — a turn has ~12, so this is generous. */
+const DETAIL_MAX = 64
 
 const app = express()
 
 app.get('/api/runs', (_req, res) => {
   res.json({ runs: listRuns(), current: currentRun(), runsDir: RUNS_DIR })
+})
+
+// What the log cache is actually holding. The point of the cache is that N viewers of one
+// run cost one parsed copy, and `retainedMB` against `runs` is the only way to see that
+// from outside without attaching a profiler.
+app.get('/api/health', (_req, res) => {
+  const mem = process.memoryUsage()
+  res.json({
+    ok: true,
+    cache: cacheStats(),
+    heapMB: +(mem.heapUsed / 1048576).toFixed(1),
+    rssMB: +(mem.rss / 1048576).toFixed(1),
+    uptimeS: Math.round(process.uptime()),
+  })
 })
 
 // A runId is now any number of path segments ("m3/m3_paper_0/<stamp>" as well as the old
@@ -60,7 +77,18 @@ const server = app.listen(PORT, HOST, () => {
 
 // ---------------------------------------------------------------- websocket
 
-const wss = new WebSocketServer({ server, path: '/ws' })
+// The event stream is JSON over a link the browser opened; it compresses about 8x, which
+// on the biggest run is the difference between pushing 10 MB and pushing 1.3 MB. Caddy's
+// `encode` cannot do this — a WebSocket is an upgrade, not a response it gets to encode.
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  perMessageDeflate: {
+    threshold: 1024,                  // below this, framing costs more than it saves
+    zlibDeflateOptions: { level: 6 },
+    concurrencyLimit: 10,             // cap zlib work on a 2-core box
+  },
+})
 
 class Session {
   constructor(ws) {
@@ -68,7 +96,10 @@ class Session {
     this.runId = null
     this.file = null
     this.events = []
+    /** Byte offset of each event's line, so a turn's prompts can be re-read on demand. */
+    this.offsets = []
     this.timeline = []
+    this.periods = []
     // Two-level cursor: `cursor` walks turns, `sub` walks the events inside one turn.
     // Playback and the slider move `cursor`; the arrow keys move `sub` and roll over into
     // the neighbouring turn, so one key walks the whole log linearly.
@@ -86,18 +117,24 @@ class Session {
   }
 
   async load(runId) {
-    const file = logPath(runId)
-    if (!file) return this.send({ type: 'error', message: `no such run: ${runId}` })
+    // A finished run is handed out from the shared cache by reference; a live one is read
+    // privately because follow() appends to these arrays as the file grows and every other
+    // viewer would see the mutation.
+    const live = currentRun() === runId
+    const entry = await loadRun(runId, { cache: !live })
+    if (!entry) return this.send({ type: 'error', message: `no such run: ${runId}` })
     this.stop()
     this.closeWatcher()
     this.runId = runId
-    this.file = file
-    this.events = []
+    this.file = entry.file
     this.cursor = 0
     this.sub = 0
 
-    this.offset = await readEvents(file, { onBatch: (b) => this.events.push(...b) })
-    this.timeline = buildTimeline(this.events)
+    this.events = entry.events
+    this.offsets = entry.offsets
+    this.timeline = entry.timeline
+    this.periods = entry.periods
+    this.offset = entry.end
     this.send({
       type: 'loaded',
       runId,
@@ -105,14 +142,46 @@ class Session {
       metrics: readMetrics(runId),
       totalEvents: this.events.length,
       timeline: this.timeline,
-      periods: periodIndex(this.timeline),
-      live: currentRun() === runId,
+      periods: this.periods,
+      live,
     })
     for (let i = 0; i < this.events.length; i += CHUNK) {
       this.send({ type: 'events', events: this.events.slice(i, i + CHUNK) })
     }
     this.send({ type: 'ready', cursor: this.cursor, sub: this.sub })
-    if (currentRun() === runId) this.follow()
+    if (live) this.follow()
+  }
+
+  /**
+   * The prompt and reasoning text for one turn's model calls, read straight off disk at the
+   * offsets recorded during load. Requested when the raw-record panel is opened, which is
+   * the only place these fields are shown.
+   *
+   * Bounded per request: a turn has a dozen model calls at most, so a range asking for
+   * hundreds is not a viewer navigating and is not served as one.
+   */
+  detail(from, to) {
+    const lo = Math.max(0, Math.trunc(from) || 0)
+    const hi = Math.min(this.events.length - 1, Math.trunc(to) || 0)
+    const want = []
+    for (let i = lo; i <= hi && want.length <= DETAIL_MAX; i++) {
+      if (this.events[i]?.type === 'model_turn' && this.events[i].payload?.detail) want.push(i)
+    }
+    if (want.length > DETAIL_MAX) {
+      return this.send({ type: 'error', message: `detail range too wide (>${DETAIL_MAX} calls)` })
+    }
+    const lines = readLinesAt(this.file, want.map((i) => this.offsets[i]))
+    const items = []
+    for (const i of want) {
+      const full = lines.get(this.offsets[i])
+      if (!full?.payload) continue
+      // Keyed by event_id, not by array position: the client holds these across seeks and
+      // an id survives a reload that a position would not.
+      const d = { id: full.event_id ?? this.events[i].event_id }
+      for (const k of HEAVY) if (full.payload[k] != null) d[k] = full.payload[k]
+      items.push(d)
+    }
+    this.send({ type: 'detail', items })
   }
 
   /** Tail a run that is still being written: new lines are pushed as they land. */
@@ -122,16 +191,24 @@ class Session {
       const before = this.events.length
       this.offset = await readEvents(this.file, {
         start: this.offset,
-        onBatch: (b) => this.events.push(...b),
+        // Strip exactly as the initial load did, or a followed run would start pushing the
+        // full prompts again the moment it grew.
+        onBatch: (b, offs) => {
+          for (let i = 0; i < b.length; i++) {
+            this.events.push(lite(b[i]).event)
+            this.offsets.push(offs[i])
+          }
+        },
       })
       if (this.events.length === before) return
       this.timeline = buildTimeline(this.events)
+      this.periods = periodIndex(this.timeline)
       this.send({ type: 'events', events: this.events.slice(before) })
       this.send({
         type: 'grew',
         totalEvents: this.events.length,
         timeline: this.timeline,
-        periods: periodIndex(this.timeline),
+        periods: this.periods,
       })
     }
     this.watcher.on('change', () => { pull().catch(() => {}) })
@@ -242,6 +319,7 @@ wss.on('connection', (ws) => {
     try {
       switch (msg.type) {
         case 'load': return await s.load(msg.runId)
+        case 'detail': return s.detail(msg.from ?? 0, msg.to ?? 0)
         case 'play': return s.play()
         case 'pause': return s.stop()
         case 'step':

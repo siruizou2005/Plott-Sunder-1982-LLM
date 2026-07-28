@@ -1,5 +1,5 @@
 import { basisLabel, infoLabel, reasonLabel, stepKindLabel, useT, type Strings } from '../i18n'
-import type { DerivedState } from '../store'
+import { useStore, type DerivedState } from '../store'
 import { splitTurn, standingOf, turnCost, type Standing } from '../turn'
 import type { Ev } from '../types'
 import { TYPE_COLOR } from '../types'
@@ -346,12 +346,18 @@ function ResultSection({ trades, reflections, t }: {
  * The prompts stay available, because auditing exactly what a seat was sent is the point of
  * logging them; they just are no longer the first thing you see.
  */
-function RawRecord({ calls, t }: { calls: Ev[]; t: Strings }) {
+function RawRecord({ calls, from, to, t }:
+                   { calls: Ev[]; from: number; to: number; t: Strings }) {
+  const askDetail = useStore((s) => s.askDetail)
+  const details = useStore((s) => s.details)
   if (!calls.length) return null
   const { tokens, seconds } = turnCost(calls)
   return (
     <details className="rounded-lg border border-slate-200 bg-white shadow-sm
-                        dark:border-slate-700 dark:bg-slate-900">
+                        dark:border-slate-700 dark:bg-slate-900"
+             // The prompts and reasoning are ~90% of a log and live only in here, so they
+             // are fetched when this opens rather than shipped with every run.
+             onToggle={(e) => { if (e.currentTarget.open) askDetail(from, to) }}>
       <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase
                           tracking-wide text-slate-500 dark:text-slate-400">
         {t.rawRecord}
@@ -368,6 +374,13 @@ function RawRecord({ calls, t }: { calls: Ev[]; t: Strings }) {
         </div>
         {calls.map((c, i) => {
           const p = c.payload
+          // `detail: true` means the server kept these three on disk. Until the fetch lands
+          // the folds say so rather than rendering as empty, which would read as "this turn
+          // had no prompt" — a claim about the data, not about the transfer.
+          const d = details[c.event_id]
+          const pending = p?.detail && !d
+          const text = (k: 'system' | 'user' | 'reasoning') =>
+            d?.[k] ?? (pending ? t.loadingDetail : p?.[k] ?? '')
           return (
             <details key={i} className="border-b border-slate-100 last:border-b-0
                                         dark:border-slate-800">
@@ -386,14 +399,16 @@ function RawRecord({ calls, t }: { calls: Ev[]; t: Strings }) {
                 </span>
               </summary>
               <div className="space-y-2 px-3 pb-3">
-                <Fold label={`${t.systemPrompt} ▾`}><Mono max="14rem">{p.system}</Mono></Fold>
-                <Fold label={`${t.userPrompt} ▾`}><Mono max="14rem">{p.user}</Mono></Fold>
+                <Fold label={`${t.systemPrompt} ▾`}><Mono max="14rem">{text('system')}</Mono></Fold>
+                <Fold label={`${t.userPrompt} ▾`}><Mono max="14rem">{text('user')}</Mono></Fold>
                 {/* The chain of thought — the only direct record of how the agent got to
                     its number, and the primary evidence for whether an uninformed seat
-                    read the state off the price. Audience-only, like the clue cards. */}
-                {p.reasoning && (
+                    read the state off the price. Audience-only, like the clue cards.
+                    `usage.reasoning_tokens` ships with the lite event, so a turn that did
+                    reason still offers the fold before its text has arrived. */}
+                {(d?.reasoning || (pending && p?.usage?.reasoning_tokens) || p?.reasoning) && (
                   <Fold label={`${t.reasoningLabel} ▾ ${p.usage?.reasoning_tokens ?? ''} ${t.tokens}`}>
-                    <Mono max="18rem">{p.reasoning}</Mono>
+                    <Mono max="18rem">{text('reasoning')}</Mono>
                   </Fold>
                 )}
                 <div>
@@ -585,7 +600,7 @@ export function AgentTrail({ d }: { d: DerivedState }) {
         <ResultSection trades={p.trades} reflections={p.reflections} t={t} />
       </Sec>
 
-      <RawRecord calls={p.modelCalls} t={t} />
+      <RawRecord calls={p.modelCalls} from={turn.from} to={turn.to} t={t} />
     </div>
   )
 }

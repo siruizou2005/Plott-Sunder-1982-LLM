@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { BookT, Ev, PeriodMark, RoundOutcome, RunInfo, SeatState, TradeT, Turn }
-  from './types'
+import type { BookT, Ev, PeriodMark, RoundOutcome, RunInfo, SeatState, TradeT, Turn,
+              TurnDetail } from './types'
 import type { Lang } from './i18n'
 
 /**
@@ -74,9 +74,15 @@ interface Store {
   speed: number
   error: string | null
 
+  /** Prompt and reasoning text fetched on demand, keyed by event_id. See `askDetail`. */
+  details: Record<number, TurnDetail>
+  /** Event-index ranges already requested, so opening a panel twice asks once. */
+  detailAsked: Record<string, true>
+
   connect: () => void
   send: (m: any) => void
   load: (runId: string) => void
+  askDetail: (from: number, to: number) => void
   play: () => void
   pause: () => void
   stepTurn: (n: number) => void
@@ -198,6 +204,8 @@ export const useStore = create<Store>((set, get) => ({
   playing: false,
   speed: 1,
   error: null,
+  details: {},
+  detailAsked: {},
 
   connect: () => {
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
@@ -226,8 +234,21 @@ export const useStore = create<Store>((set, get) => ({
             runId: m.runId, meta: m.meta, metrics: m.metrics, live: m.live,
             events: [], timeline: m.timeline ?? [], periods: m.periods ?? [],
             cursor: 0, sub: 0, seatTypes: {}, theory: THEORY_MARKET3,
+            // Event indices are per-run, so a stale detail would attach the wrong prompt
+            // to the right-looking turn.
+            details: {}, detailAsked: {},
           })
           break
+        case 'detail': {
+          if (!m.items?.length) break
+          const details = { ...get().details }
+          for (const d of m.items as (TurnDetail & { id: number })[]) {
+            const { id, ...rest } = d
+            details[id] = rest
+          }
+          set({ details })
+          break
+        }
         case 'events':
           set({
             events: get().events.concat(m.events),
@@ -261,6 +282,17 @@ export const useStore = create<Store>((set, get) => ({
 
   send: (m) => { if (ws?.readyState === 1) ws.send(JSON.stringify(m)) },
   load: (runId) => { get().send({ type: 'load', runId }) },
+  /**
+   * Ask for the prompt and reasoning text of the model calls in an event range. The server
+   * strips those three fields from the bulk push — they are 90% of a log's bytes and are
+   * only ever shown inside a collapsed panel — so they arrive when that panel is opened.
+   */
+  askDetail: (from, to) => {
+    const key = `${from}:${to}`
+    if (get().detailAsked[key]) return
+    set({ detailAsked: { ...get().detailAsked, [key]: true } })
+    get().send({ type: 'detail', from, to })
+  },
   play: () => get().send({ type: 'play' }),
   pause: () => get().send({ type: 'pause' }),
   stepTurn: (n) => get().send({ type: 'step', n, unit: 'turn' }),

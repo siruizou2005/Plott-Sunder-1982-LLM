@@ -1,6 +1,21 @@
 export type Side = 'bid' | 'ask'
 export type InfoCond = 'none' | 'insider' | 'all'
 
+/**
+ * The three `model_turn` fields the server does NOT push with the bulk event stream.
+ *
+ * They are 90.6% of a log's bytes (`user` 33.6%, `system` 30.9%, `reasoning` 26.1% on
+ * runs/rounds/m4_r5_random) and are rendered only inside the raw-record panel, which is
+ * collapsed three levels deep. A `model_turn` whose payload carries `detail: true` has them
+ * on disk; opening the panel fetches them by event index. `completion` is not here — it is
+ * 0.8% of the file and shows in the collapsed summary line, so it always ships.
+ */
+export interface TurnDetail {
+  system?: string
+  user?: string
+  reasoning?: string
+}
+
 /** One line of the JSONL log, unchanged from what the Python engine wrote. */
 export interface Ev {
   event_id: number

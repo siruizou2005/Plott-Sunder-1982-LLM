@@ -105,16 +105,24 @@ export function currentRun() {
  * A run in progress can leave a partial final line; that line is skipped rather than
  * throwing, and the byte offset returned is the end of the last COMPLETE line so a
  * follower can resume cleanly from there.
+ *
+ * onBatch also receives the byte offset each event's line STARTS at, as a parallel array.
+ * That is what lets the heavy prompt/reasoning fields be dropped from memory and re-read
+ * one line at a time later (readLinesAt) instead of being held for every connected client.
+ * Callers that do not want offsets simply ignore the second argument.
  */
 export function readEvents(file, { onBatch, batchSize = 500, start = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const stream = fs.createReadStream(file, { encoding: 'utf8', start })
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
     let batch = []
+    let offsets = []
     let consumed = start
     let pending = 0
 
     rl.on('line', (line) => {
+      // Before `pending` grows, consumed + pending is where THIS line begins.
+      const lineStart = consumed + pending
       const bytes = Buffer.byteLength(line, 'utf8') + 1
       pending += bytes
       const t = line.trim()
@@ -128,19 +136,65 @@ export function readEvents(file, { onBatch, batchSize = 500, start = 0 } = {}) {
       } catch {
         return // truncated tail: leave `consumed` behind it so we retry this line later
       }
+      offsets.push(lineStart)
       consumed += pending
       pending = 0
       if (batch.length >= batchSize) {
-        onBatch?.(batch)
+        onBatch?.(batch, offsets)
         batch = []
+        offsets = []
       }
     })
     rl.on('close', () => {
-      if (batch.length) onBatch?.(batch)
+      if (batch.length) onBatch?.(batch, offsets)
       resolve(consumed)
     })
     rl.on('error', reject)
   })
+}
+
+/**
+ * Re-read specific lines by the byte offsets readEvents reported, and return the parsed
+ * events keyed by the offset asked for. One seek and one small read per line, so fetching
+ * a turn's full prompts costs nothing like re-scanning the log.
+ *
+ * Offsets that do not resolve to a parseable line are omitted rather than throwing — a
+ * stale offset means the file was rewritten, and the caller wants the rest regardless.
+ */
+export function readLinesAt(file, offsets, { maxLineBytes = 4 << 20 } = {}) {
+  const out = new Map()
+  let fd
+  try {
+    fd = fs.openSync(file, 'r')
+  } catch {
+    return out
+  }
+  const size = fs.fstatSync(fd).size
+  const buf = Buffer.allocUnsafe(Math.min(maxLineBytes, 1 << 20))
+  try {
+    for (const off of offsets) {
+      if (!Number.isInteger(off) || off < 0 || off >= size) continue
+      // Grow past the scratch buffer only for the rare line that needs it.
+      let chunk = buf
+      let read = fs.readSync(fd, chunk, 0, chunk.length, off)
+      let nl = chunk.indexOf(10, 0)
+      while (nl < 0 && read === chunk.length && chunk.length < maxLineBytes) {
+        chunk = Buffer.allocUnsafe(Math.min(maxLineBytes, chunk.length * 2))
+        read = fs.readSync(fd, chunk, 0, chunk.length, off)
+        nl = chunk.indexOf(10, 0)
+      }
+      const end = nl < 0 ? read : nl
+      if (end <= 0) continue
+      try {
+        out.set(off, JSON.parse(chunk.toString('utf8', 0, end)))
+      } catch {
+        // stale or partial line — skip it
+      }
+    }
+  } finally {
+    fs.closeSync(fd)
+  }
+  return out
 }
 
 // The playback timeline lives in timeline.js — a session takes hours of wall-clock, so
