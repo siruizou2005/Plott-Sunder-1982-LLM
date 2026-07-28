@@ -1,15 +1,24 @@
 import { Fragment, useMemo } from 'react'
-import { useStore, type DerivedState, theoryFor } from '../store'
+import { useStore, type DerivedState, theoryFor, theoryFromMetrics,
+         type TheoryCell } from '../store'
 import { useT, type Strings } from '../i18n'
 import { Empty, Panel, Tag, fmt } from './ui'
 import { EChart, axisStyle, tooltipStyle } from './EChart'
 import { STATE_TINT, TYPE_COLOR, type RoundOutcome, type SeatState } from '../types'
 
 
-/** The only cell where RE and PI disagree: six insiders and the Y state. Everywhere else
- *  the two models predict the same price, so those periods carry no identifying power. */
-const separating = (info?: string, state?: string | null) =>
-  info === 'insider' && state === 'Y'
+/**
+ * A period separates when RE and PI predict different prices — everywhere else the two
+ * models agree and the period carries no identifying power.
+ *
+ * Read from the predictions rather than from the state letter. This used to be
+ * `info === 'insider' && state === 'Y'`, which is market 3's answer and only market 3's:
+ * markets 2 and 5 separate on X, so every separating period in them was marked wrong and
+ * every non-separating one marked right, and market 1 separates on BOTH letters because
+ * its clue is a ten-draw sample rather than a letter, so which periods separate depends on
+ * the sample that period drew and cannot be read off the state at all.
+ */
+const separating = (th?: TheoryCell) => th !== undefined && th.RE !== th.PI
 
 const holderLabel = (t: Strings, spec: string) =>
   spec === 'I_insider' ? `I · ${t.insiderMean}`
@@ -131,11 +140,18 @@ function BookPanel({ d }: { d: DerivedState }) {
 // ---------------------------------------------------------------- price chart
 
 function PriceChart({ d }: { d: DerivedState }) {
-  const theory = useStore((s) => s.theory)
+  const recorded = useStore((s) => s.theory)
+  const metrics = useStore((s) => s.metrics)
   const t = useT()
   const events = useStore((s) => s.events)
   const periods = useStore((s) => s.periods)
   const seek = useStore((s) => s.seek)
+
+  // Empty means the run's own table was discarded as untrustworthy — market 1 — so fall
+  // back to what metrics.py recomputed. Every other market keeps its recorded table.
+  const theory = useMemo(
+    () => (Object.keys(recorded).length ? recorded : theoryFromMetrics(metrics)),
+    [recorded, metrics])
 
   // The event walk depends only on the log, so it must not sit inside the per-cursor memo:
   // holding an arrow key steps many times a second and would re-scan every event each time.
@@ -202,7 +218,7 @@ function PriceChart({ d }: { d: DerivedState }) {
     const closes = buckets.flatMap((b, bi) => {
       if (!b.trades.length) return []
       const last = b.trades[b.trades.length - 1]
-      const sep = separating(b.info, b.state)
+      const sep = separating(theoryFor(theory, b.period, b.info, b.state))
       return [{
         value: [xOf(bi, b.trades.length - 1, b.trades.length), last.price, b.period],
         symbolSize: sep ? 11 : 8,
@@ -264,9 +280,19 @@ function PriceChart({ d }: { d: DerivedState }) {
     </span>
   )
 
+  // The states this run actually uses, not a fixed X/Y pair: market 5 has three, and its Z
+  // periods were both untinted and unlisted, which read as "this period has no state".
+  const states = useMemo(
+    () => [...new Set(buckets.map((b) => b.state).filter((s): s is string => !!s))].sort(),
+    [buckets])
+
   return (
     <Panel title={t.priceChart}
-           right={<span className="flex gap-2">{swatch('X', t.stateX)}{swatch('Y', t.stateY)}</span>}>
+           right={<span className="flex gap-2">
+             {states.map((s) => (
+               <Fragment key={s}>{swatch(s, t.statePays.replace('{s}', s))}</Fragment>
+             ))}
+           </span>}>
       {buckets.length ? (
         <>
           <EChart option={option} height={200} />
@@ -292,7 +318,7 @@ function PriceChart({ d }: { d: DerivedState }) {
                 <div className="truncate">
                   {b.state}
                   {/* Only these periods can tell the two models apart. */}
-                  {separating(b.info, b.state) &&
+                  {separating(theoryFor(theory, b.period, b.info, b.state)) &&
                     <span className="ml-0.5 text-violet-600 dark:text-violet-400">◆</span>}
                 </div>
               </button>
@@ -309,7 +335,11 @@ function PriceChart({ d }: { d: DerivedState }) {
 function TheoryCheck({ d, t }: { d: DerivedState; t: Strings }) {
   const theory = useStore((s) => s.theory)
   const seats = Object.values(d.seats)
-  const spec = theory[`${d.info}|${d.state}`]?.holder
+  // Via theoryFor, which reads the period-keyed scheme as well as the (info|state) one.
+  // A direct `theory[`${info}|${state}`]` lookup found nothing in a period-keyed log, so
+  // this panel silently never rendered for the six rounds-arm sessions — whose tables do
+  // carry a holder for all 14 periods.
+  const spec = theoryFor(theory, d.period, d.info, d.state)?.holder
   if (!spec || !seats.length) return null
   const total = seats.reduce((n, s) => n + s.certs, 0)
   if (!total) return null

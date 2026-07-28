@@ -116,6 +116,33 @@ let ws: WebSocket | null = null
 export type TheoryCell = { PI: number; RE: number; holder?: { PI: string; RE: string } }
 export type Theory = Record<string, TheoryCell>
 
+/**
+ * The period-keyed predictions metrics.py computed, as a Theory.
+ *
+ * This is the fallback for a run whose own table was discarded — market 1, whose logs in
+ * runs/m1/ predate the period-keyed scheme and carry a state-keyed table that is wrong for
+ * an imperfect clue. metrics.py never reads that table: it recomputes RE and PI from the
+ * market number and the cards each period actually dealt, so these values are right where
+ * the log's own are not. Without this the market chart drew a legend and no lines, which
+ * reads as "no prediction exists" rather than "the log's copy was not trustworthy".
+ *
+ * Returns {} for anything it cannot read, so the caller keeps whatever it already had.
+ */
+export function theoryFromMetrics(metrics: any): Theory {
+  const sessions = metrics?.sessions
+  if (!sessions) return {}
+  const first = sessions[Object.keys(sessions)[0]]
+  const prices = first?.paper?.prices
+  if (!Array.isArray(prices)) return {}
+  const out: Theory = {}
+  for (const p of prices) {
+    if (typeof p?.period !== 'number') continue
+    if (typeof p.re_price !== 'number' || typeof p.pi_price !== 'number') continue
+    out[String(p.period)] = { RE: p.re_price, PI: p.pi_price }
+  }
+  return out
+}
+
 /** The prediction for one period, from whichever scheme this run recorded. */
 export function theoryFor(theory: Theory, period: number,
                           info: string | null, state: string | null): TheoryCell | undefined {

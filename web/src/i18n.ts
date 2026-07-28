@@ -11,7 +11,10 @@ export type Lang = 'en' | 'zh'
  * them would misrepresent what the model actually saw and said.
  */
 export interface Strings {
+  /** Carries a `{n}` placeholder for the market number; see Header. */
   title: string
+  /** Used until a run's meta has arrived and the market number is known. */
+  titleBare: string
   subtitle: string
   // header / transport
   pickRun: string
@@ -50,6 +53,8 @@ export interface Strings {
   rePrice: string
   piPrice: string
   noTrades: string
+  /** `{s}` is the state letter; filled from the states the run actually uses. */
+  statePays: string
   stateX: string
   stateY: string
   // agents
@@ -200,7 +205,8 @@ export interface Strings {
 }
 
 const en: Strings = {
-  title: 'Plott & Sunder 1982 — Market 3',
+  title: 'Plott & Sunder 1982 — Market {n}',
+  titleBare: 'Plott & Sunder 1982',
   subtitle: 'Experimental security market with insider information · LLM agents',
   pickRun: 'Select a run',
   noRuns: 'No runs found. Run: ps1982 run --scenario scenarios/…',
@@ -231,10 +237,11 @@ const en: Strings = {
   priceChart: 'Trade prices',
   tradePrice: 'Trade',
   closePrice: 'Closing price',
-  separatingMark: '◆ = separating period: RE 175 vs PI 220. Elsewhere both models predict the same price.',
+  separatingMark: '◆ = separating period: RE and PI predict different prices. Elsewhere the two agree, so the period cannot tell them apart.',
   rePrice: 'RE prediction',
   piPrice: 'PI prediction',
   noTrades: 'No trades yet',
+  statePays: '{s}-dividend paid',
   stateX: 'X-dividend paid',
   stateY: 'Y-dividend paid',
   agents: 'Investors',
@@ -374,7 +381,8 @@ const en: Strings = {
 }
 
 const zh: Strings = {
-  title: 'Plott & Sunder 1982 —— 市场 3',
+  title: 'Plott & Sunder 1982 —— 市场 {n}',
+  titleBare: 'Plott & Sunder 1982',
   subtitle: '含内幕信息的实验性证券市场 · LLM agent 复现',
   pickRun: '选择一次运行',
   noRuns: '没有找到运行记录。请先执行：ps1982 run --scenario scenarios/…',
@@ -405,10 +413,11 @@ const zh: Strings = {
   priceChart: '成交价',
   tradePrice: '成交',
   closePrice: '收盘价',
-  separatingMark: '◆ = 可分离期：RE 175 对 PI 220。其余各期两个模型预测相同，无判别力。',
+  separatingMark: '◆ = 可分离期：RE 与 PI 预测不同价格。其余各期两者一致，无从判别。',
   rePrice: 'RE 预测价',
   piPrice: 'PI 预测价',
   noTrades: '本期尚无成交',
+  statePays: '本期付 {s} 红利',
   stateX: '本期付 X 红利',
   stateY: '本期付 Y 红利',
   agents: '投资者',

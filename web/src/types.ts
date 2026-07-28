@@ -103,10 +103,14 @@ export const TYPE_COLOR: Record<string, string> = {
 export const STATE_TINT: Record<string, string> = {
   X: 'rgba(79,124,255,0.10)',
   Y: 'rgba(224,128,60,0.10)',
+  // Market 5 is the three-state market. Without a Z its periods drew untinted and were
+  // absent from the legend, so a third of that market read as "no state".
+  Z: 'rgba(16,185,129,0.10)',
 }
 
-/** The same two hues at chip strength, for the period-jump buttons. */
+/** The same hues at chip strength, for the period-jump buttons. */
 export const STATE_TINT_SOLID: Record<string, string> = {
   X: 'rgba(79,124,255,0.28)',
   Y: 'rgba(224,128,60,0.28)',
+  Z: 'rgba(16,185,129,0.28)',
 }

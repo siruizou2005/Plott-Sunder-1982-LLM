@@ -1,17 +1,38 @@
+import { useEffect } from 'react'
+
 import { useStore } from '../store'
 import { useT } from '../i18n'
 import { Tag } from './ui'
 
+/**
+ * The market a run belongs to.
+ *
+ * Logs written before the engine recorded `market` are market 3 — the only market that
+ * existed then — which is the same reading metrics.py applies to them, and a fact about
+ * when they were written rather than a guess. Null until the run's meta arrives, so the
+ * header can say "Plott & Sunder 1982" instead of claiming a market it does not yet know.
+ */
+function marketOf(meta: any): number | null {
+  if (!meta) return null
+  const m = meta?.config?.market
+  return typeof m === 'number' ? m : 3
+}
+
 export function Header() {
   const t = useT()
   const { lang, setLang, connected, runs, runId, load, live, meta } = useStore()
+
+  const market = marketOf(meta)
+  const title = market == null ? t.titleBare : t.title.replace('{n}', String(market))
+  // The tab is how you tell two open viewers apart, so it carries the market too.
+  useEffect(() => { document.title = title }, [title])
 
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200
                        bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900">
       <div className="min-w-0">
         <h1 className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-          {t.title}
+          {title}
         </h1>
         <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{t.subtitle}</p>
       </div>
