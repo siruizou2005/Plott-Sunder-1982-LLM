@@ -1,0 +1,92 @@
+# Market 8: the ROLE-SEPARATED equal-width control. NOT one of Plott & Sunder's.
+#
+# Market 7's twin. Same prior, same distances, same information design; the difference is
+# which type holds when:
+#
+#     prior           24 of 40 balls pay X          v-bar = 300 (type I is marginal)
+#     informed buy    state X   re = 400 (type III)  +100    NON-separating
+#     informed sell   state Y   re = 200 (type II)   -100    separating
+#     competitive interval      20 francs on BOTH sides = 0.200 of D either way
+#     insider direction         X: 6 buy / 0 sell     Y: 0 buy / 6 sell
+#
+# Everywhere else in the family — markets 3, 4, 6 and 7 — the marginal type is ALSO the
+# buy-state holder, so when the buy signal arrives the units are already in the right hands
+# and only the price has to move, while the sell state additionally requires a
+# reallocation. That is a buy/sell asymmetry that equidistance and equal width do not
+# touch. Here type I sets v-bar and tops neither state, type II tops the sell state and
+# type III the buy state, so both states demand the same reallocation away from the same
+# incumbent.
+#
+# 0.200 is the tightest competitive interval in the family, so this is also the
+# highest-powered of the two.
+#
+# See docs/markets-7-8-equal-width.md.
+#
+# `random_prior` at the arm's three seeds, UNFILTERED. Proposition 1 forces p(X) > 1/2 on
+# any equidistant market, so an unfiltered draw over nine insider periods is buy-heavy in
+# expectation (5.4 against 3.6) and this arm under-samples the sell side — the only
+# separating side — by construction. Market 7 draws 18 buy / 9 sell across its three seeds
+# and market 8 draws 15 / 12; market 8's seeds 42 and 43 draw the SAME nine insider periods
+# and differ only at period 14. Recorded rather than fixed: filtering seeds on a balance
+# criterion, or designing the sequence, were both considered and declined. The seeds were
+# given, not searched. tests/test_markets.py pins all of it.
+#
+# NOT `paper_exact`: markets 7 and 8 have no Table 1 row, and `sequence_states` holds
+# market 4's inherited row, which carries 6 X in 14 periods against the 8.4 this .6 cage
+# expects. Running it would show agents a sequence that argues against their own cage.
+run_name: m8_control
+seed: 42
+sequence_preset: random_prior
+market: 8
+sessions: 1
+max_rounds_per_period: 3
+# Six sessions x 12 workers = 72 in flight, a structural ceiling against Bailian's
+# tolerated 50-80; the measured mean is 1.9 per session, so ~11 typical. W stays at 12
+# because the 26 sessions of the main result all ran at 12 and this arm is read against
+# them. See bailian_paper.yaml.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing. Measured reasoning
+    # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
+    max_output_tokens: 8192
+    # 8192, not 512, and the number is measured. `broadcast_max_output_tokens` was dead
+    # config until f27fec7/f789d04: every broadcast in every earlier run used the provider
+    # default of 8192, which is what market 3's completed sessions ran at. The first run
+    # after the cap actually reached the provider truncated 29% of broadcasts (249 of 859)
+    # to an empty string -- the model spent the whole 512 reasoning and emitted no JSON,
+    # measured as reasoning_tokens 1,536 = 3 x 512 across the call and its two repairs.
+    # The unconstrained distribution from those market-3 runs: median 609, 58% over 512,
+    # p95 2,526, p99 3,756, max 7,170. A cap here does not save money either: a truncated
+    # call burns 1,536 tokens and returns nothing, against 609 for one clean call.
+    broadcast_max_output_tokens: 8192
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    # Reasoning shares this budget. At 400 (and even at 1200) the note itself was
+    # truncated away: 6 of 12 year-end notes came back empty on the probe run.
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

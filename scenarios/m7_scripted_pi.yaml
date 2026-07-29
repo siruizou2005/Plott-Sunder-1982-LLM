@@ -1,0 +1,26 @@
+# Engine correctness gate for MARKET 7, an equal-width control. Zero API cost.
+# Prior-information baseline: agents value a certificate at their OWN expected dividend
+# and ignore what the price is telling them, so prices must sit at the uninformed 260
+# in sell periods and NOT move. This is the null the separating periods are read against.
+#
+# Run on the seed-42 draw — the market m7_ctrl_42 actually faces — rather than on the
+# inherited `paper_exact` sequence. A gate that passes on a sequence nothing runs is a
+# gate on the wrong market.
+run_name: m7_scripted_pi
+seed: 42
+sequence_preset: random_prior
+market: 7
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # market 4's design, which this inherits
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: pi

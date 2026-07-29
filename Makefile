@@ -1,7 +1,7 @@
 PY := ./.venv/bin/python
 SC := scenarios
 
-.PHONY: setup test validate gate gate6 smoke run metrics web dev-api dev-ui clean
+.PHONY: setup test validate gate gate6 gate7 gate8 smoke run metrics web dev-api dev-ui clean
 
 setup:
 	python3 -m venv .venv
@@ -29,6 +29,21 @@ gate6:
 	@for k in re pi zi; do \
 		echo "=== market 6, scripted $$k ==="; \
 		$(PY) -m ps1982 run --scenario $(SC)/m6_scripted_$$k.yaml 2>&1 | tail -20; \
+	done
+
+## The gate on the two equal-width controls, on the seeds their arm runs. Read gate7 and
+## gate8 TOGETHER: the point of running both markets is that they differ only in which type
+## holds when, so a baseline that behaves differently across them is the finding, not noise.
+gate7:
+	@for k in re pi zi; do \
+		echo "=== market 7, scripted $$k ==="; \
+		$(PY) -m ps1982 run --scenario $(SC)/m7_scripted_$$k.yaml 2>&1 | tail -20; \
+	done
+
+gate8:
+	@for k in re pi zi; do \
+		echo "=== market 8, scripted $$k ==="; \
+		$(PY) -m ps1982 run --scenario $(SC)/m8_scripted_$$k.yaml 2>&1 | tail -20; \
 	done
 
 smoke:

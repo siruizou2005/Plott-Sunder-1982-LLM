@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 
 from ps1982 import params
-from ps1982.markets import MARKETS, PAPER_MARKETS, sample_posterior
+from ps1982.markets import MARKETS, PAPER_MARKETS, CONTROL_MARKETS, sample_posterior
 
 ALL = list(MARKETS.values())
 # The paper's own five. A guard that asserts something Plott & Sunder DID — which markets
@@ -676,8 +676,11 @@ def test_market_6_is_not_one_of_the_papers():
     not silently acquire a row for a market they never printed."""
     assert 6 not in PAPER_MARKETS
     assert 6 not in TABLE_3 and 6 not in FOOTNOTE_6
-    assert set(MARKETS) == set(PAPER_MARKETS) | {6}
-    assert "NOT a Plott & Sunder market" in M6.note
+    assert set(MARKETS) == set(PAPER_MARKETS) | set(CONTROL_MARKETS)
+    assert set(PAPER_MARKETS) & set(CONTROL_MARKETS) == set()
+    for n in CONTROL_MARKETS:
+        assert n not in TABLE_3 and n not in FOOTNOTE_6
+        assert "NOT a Plott & Sunder market" in MARKETS[n].note
 
 
 def test_market_6_redraw_keeps_the_information_design_and_the_prior():
@@ -710,3 +713,373 @@ def test_the_meta_block_the_viewer_reads_comes_from_this_module():
         assert b["n_agents"] == m.n_agents and b["bingo_total"] == m.bingo_total
     assert _market_block(MARKETS[5])["states"] == ["X", "Y", "Z"]
     assert _market_block(MARKETS[6])["paper"] is False
+
+
+# ---------------------------------------------------------------- markets 7 and 8
+#
+# The equal-width controls. Market 6 removed the distance confound and left two others
+# standing; these remove all three. Ours, so — as with market 6 — every claim made for them
+# is recomputed here from the dividends and the prior rather than asserted in a comment.
+
+M7, M8 = MARKETS[7], MARKETS[8]
+
+#: type -> the prior expectation the design states. Recomputed below, not trusted.
+DESIGN_EV = {7: {"I": 260.0, "II": 250.0, "III": 238.0},
+             8: {"I": 300.0, "II": 290.0, "III": 280.0}}
+
+
+def competitive_interval(m, state):
+    """[second-highest, highest] informed valuation — the prices that clear the market.
+
+    With 24 certificates and four agents of the top type, the top type alone demands the
+    whole supply at any price strictly between the second-highest and the highest
+    valuation, so every such price supports the competitive allocation. re is the TOP edge,
+    which is why a fully competitive price can still score D well below 1.
+    """
+    vals = sorted((m.dividends[t][state] for t in m.types), reverse=True)
+    return vals[1], vals[0]
+
+
+def interval_width_in_D(m, state):
+    """How much of the D scale a merely-competitive price can occupy in this state."""
+    lo, hi = competitive_interval(m, state)
+    return (hi - lo) / abs(hi - max(m.prior_ev.values()))
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_markets_7_and_8_expected_dividends_match_the_design(number):
+    """The design states a prior-expectation column; this is it, recomputed."""
+    ev = MARKETS[number].prior_ev
+    for t, want in DESIGN_EV[number].items():
+        assert abs(ev[t] - want) < 1e-9, f"market {number} type {t}: {ev[t]} != {want}"
+    assert sorted(ev.values())[-1] > sorted(ev.values())[-2], "marginal type must be unique"
+    assert MARKETS[number]._argmax_types(ev) == "I"
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_markets_7_and_8_prior_is_derived_from_the_design_not_chosen(number):
+    """p(X) = .6 is the ONLY prior under which all three stated expectations hold.
+
+    The design gives dividends and expectations; the prior is what reconciles them. Solving
+    from type I alone would leave two unused equations, and a transcription slip in either
+    of the other rows would then pass unnoticed — so all three are solved and compared.
+    """
+    m = MARKETS[number]
+    solved = set()
+    for t, ev in DESIGN_EV[number].items():
+        x, y = m.dividends[t]["X"], m.dividends[t]["Y"]
+        solved.add(round((ev - y) / (x - y), 10))
+    assert solved == {0.6}, f"market {number}: rows disagree about the prior -> {solved}"
+    assert m.prior == {"X": 0.6, "Y": 0.4}
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_markets_7_and_8_are_equidistant(number):
+    """Both informed-trade directions 100 francs from the uninformed level."""
+    m = MARKETS[number]
+    vbar = max(m.prior_ev.values())
+    re_buy = m.theory_at("insider", "X")[0]["RE"]
+    re_sell = m.theory_at("insider", "Y")[0]["RE"]
+    assert re_buy - vbar == vbar - re_sell == 100.0
+    assert (vbar, re_buy, re_sell) == ({7: (260.0, 360, 160), 8: (300.0, 400, 200)}[number])
+
+
+@pytest.mark.parametrize("number,want", ((7, 0.300), (8, 0.200)))
+def test_markets_7_and_8_are_equal_width(number, want):
+    """The defect market 6 has and these do not.
+
+    Equidistance fixes D's denominator. The numerator keeps its own slack: a price anywhere
+    inside the competitive interval is competitive, so the interval's width in D units is
+    the buy/sell gap a perfectly competitive market would show for free. Market 6 is the
+    most lopsided market in the whole family on this measure (0.875 against 0.125) — its
+    buy side cannot be distinguished from competitive until D falls below 0.125, while the
+    paper's measured agent buy-side D is 0.14.
+    """
+    m = MARKETS[number]
+    widths = {s: interval_width_in_D(m, s) for s in m.states}
+    assert widths["X"] == pytest.approx(widths["Y"]), "equal width is the point"
+    for s in m.states:
+        assert widths[s] == pytest.approx(want, abs=1e-9)
+
+
+def test_the_competitive_interval_width_across_the_whole_family():
+    """Pinned market by market, because this is the comparison the arm is read against.
+
+    Two-state markets only: market 5's v-bar sits INSIDE the competitive interval on both
+    of its buy states, which is a different defect and is pinned by its own test.
+    """
+    want = {3: (0.556, 0.556), 4: (0.606, 0.714), 6: (0.875, 0.125),
+            7: (0.300, 0.300), 8: (0.200, 0.200)}
+    for n, (buy, sell) in want.items():
+        m = MARKETS[n]
+        vbar = max(m.prior_ev.values())
+        got = {}
+        for s in m.states:
+            side = "buy" if max(m.dividends[t][s] for t in m.types) > vbar else "sell"
+            got[side] = interval_width_in_D(m, s)
+        assert got["buy"] == pytest.approx(buy, abs=0.001), f"market {n} buy"
+        assert got["sell"] == pytest.approx(sell, abs=0.001), f"market {n} sell"
+    # only 7 and 8 are equal-width, and market 3's equality is a coincidence of 100/180 =
+    # 25/45 rather than a design property — it is not equidistant, so D still flatters one
+    # side there.
+    assert want[3][0] == want[3][1] and MARKETS[3].prior["X"] == 0.4
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_markets_7_and_8_have_every_insider_on_the_same_side(number):
+    """The third defect, and the one that has no name in the paper.
+
+    A "buy state" is defined by re > v-bar, and re is the TOP type's valuation — it says
+    where the RE price belongs, not what the informed will do. In markets 3 and 4 the buy
+    state X has two of six insiders below v-bar and therefore wanting to sell; in market 5
+    every one of the three states carries net sell pressure among insiders, so its two
+    nominal buy states are ones where the price is supposed to fall. Here all six insiders
+    want the same thing in each state, so the direction of the test is the direction of the
+    incentive.
+    """
+    m = MARKETS[number]
+    vbar = max(m.prior_ev.values())
+    for state, (want_buy, want_sell) in (("X", (6, 0)), ("Y", (0, 6))):
+        buy = sum(m.insiders_per_type for t in m.types if m.dividends[t][state] > vbar)
+        sell = sum(m.insiders_per_type for t in m.types if m.dividends[t][state] < vbar)
+        assert (buy, sell) == (want_buy, want_sell), f"market {number} state {state}"
+    # and the published markets that do NOT have this property, pinned so the contrast is
+    # not just asserted in prose
+    m3, m5 = MARKETS[3], MARKETS[5]
+    v3 = max(m3.prior_ev.values())
+    assert sum(2 for t in m3.types if m3.dividends[t]["X"] < v3) == 2, "m3 X: 2 of 6 sell"
+    v5 = max(m5.prior_ev.values())
+    for s in m5.states:
+        sellers = sum(2 for t in m5.types if m5.dividends[t][s] < v5)
+        assert sellers >= 4, f"market 5 state {s} has net sell pressure among insiders"
+
+
+def test_market_8_separates_the_three_type_roles_and_market_7_does_not():
+    """The one design difference between the twins, stated as the arithmetic that makes it.
+
+    Everywhere else in the family the marginal type is ALSO the buy-state holder, so when
+    the buy signal arrives the units are already in the right hands and only the price has
+    to move; the sell state requires a reallocation the buy state does not. Market 8 gives
+    each type one job — I sets v-bar and tops neither state, II tops the sell state, III
+    tops the buy state — so both states demand the same reallocation away from the same
+    incumbent. Market 7 keeps the family's structure, which is exactly why both are run.
+    """
+    def holder(m, state):
+        return max(m.types, key=lambda t: m.dividends[t][state])
+
+    for m in (MARKETS[3], MARKETS[4], MARKETS[6], M7):
+        marginal = m._argmax_types(m.prior_ev)
+        assert holder(m, "X") == marginal, f"market {m.number}: marginal type tops the buy state"
+        assert holder(m, "Y") != marginal
+
+    marginal8 = M8._argmax_types(M8.prior_ev)
+    assert marginal8 == "I"
+    assert holder(M8, "X") == "III" and holder(M8, "Y") == "II"
+    assert marginal8 not in (holder(M8, "X"), holder(M8, "Y")), "type I tops neither state"
+    # every type has exactly one role, which is what "role-separated" has to mean
+    assert {marginal8, holder(M8, "X"), holder(M8, "Y")} == set(M8.types)
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_markets_7_and_8_buy_side_is_still_non_separating(number):
+    """Equation (1) is algebraic: re != pi iff the informed profit by selling.
+
+    No reparameterisation touches it. Neither equidistance nor equal width nor unanimous
+    insider direction makes the classic price test see informed buying, and a control that
+    accidentally separated on the buy side would be a different market, not a better one.
+    """
+    m = MARKETS[number]
+    vbar = max(m.prior_ev.values())
+    for st in m.states:
+        price = m.theory_at("insider", st)[0]
+        assert (price["RE"] != price["PI"]) == (price["RE"] < vbar), f"state {st}"
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_markets_7_and_8_prior_is_a_whole_number_of_balls(number):
+    """The prompt has no way to say a prior except the bingo cage — 'probability' never
+    appears — so a prior that does not divide the cage would misstate itself all session."""
+    m = MARKETS[number]
+    assert m.bingo_total == 40
+    assert m.cage_ranges == [("X", 1, 24), ("Y", 25, 40)]
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_markets_7_and_8_keep_market_4s_structure(number):
+    """Market 4's, not market 3's, and the sequence is inherited rather than designed.
+
+    Market 4 is the only information design in the family with a no-information period at
+    the END (period 14). That period is the only place the uninformed resting price can be
+    measured after experience, and it is the one estimate that separates a cold-start
+    artefact from a real baseline bias. It costs the two full-information periods markets 3
+    and 6 have, so this arm adds nothing to the institutional-component estimate.
+    """
+    m, m4 = MARKETS[number], MARKETS[4]
+    assert (m.n_agents, m.n_per_type, m.insiders_per_type) == (12, 4, 2)
+    assert m.insiders == m4.insiders
+    assert m.states == m4.states
+    assert m.sequence_info == m4.sequence_info
+    assert m.sequence_states == m4.sequence_states, "inherited, not invented"
+    assert m.n_periods == m4.n_periods == 14
+    assert m.announce_no_info is m4.announce_no_info is False
+    assert m.dividends_constant_is_common_knowledge is True
+    assert m.imperfect is False
+    assert m.franc_to_usd == m4.franc_to_usd
+    # the end-of-session no-information period, which is the reason for choosing market 4
+    assert m.sequence_info[-1] == "none" and m.sequence_info[3] == "none"
+    assert m.sequence_info.count("all") == 0, "market 4 has no full-information period"
+
+
+@pytest.mark.parametrize("number", (7, 8))
+def test_the_inherited_sequence_is_prior_inconsistent_under_the_new_cage(number):
+    """Why `paper_exact` is not the arm's preset, asserted rather than trusted to a comment.
+
+    Market 4's row was realized under a .4 prior on X and carries 6 X in 14 periods. Under
+    these markets' .6 cage the expectation is 8.4, so running `paper_exact` here would show
+    agents a sequence that argues against the cage they were told about. The arm uses
+    `random_prior`; this guard exists so that the day someone runs `paper_exact` on market 7
+    the reason it is odd is already written down.
+    """
+    m = MARKETS[number]
+    assert m.sequence_states.count("X") == 6
+    assert m.prior["X"] * m.n_periods == pytest.approx(8.4)
+
+
+def _free_riders(m, state):
+    """Uninformed agents who already trade toward RE in `state` on their prior alone.
+
+    An uninformed agent values a certificate at its own prior expectation. If that sits
+    below the RE price in a sell state (or above it in a buy state) the agent trades in the
+    RE direction having learned NOTHING — the price moves toward RE for free.
+    """
+    vbar = max(m.prior_ev.values())
+    re = max(m.dividends[t][state] for t in m.types)
+    if re > vbar:
+        who = [t for t in m.types if m.prior_ev[t] > re]
+    else:
+        who = [t for t in m.types if m.prior_ev[t] < re]
+    return len(who) * (m.n_per_type - m.insiders_per_type)
+
+
+@pytest.mark.parametrize("number", sorted(MARKETS))
+def test_no_uninformed_agent_can_ever_free_ride_on_the_buy_side(number):
+    """An identity, not a parameter choice, and it holds in every market ever built.
+
+    v-bar is `max_t E_prior[d_t]` — the LARGEST valuation any uninformed agent can hold —
+    and a buy state is DEFINED by re > v-bar. So no uninformed agent values a certificate
+    above the buy-side RE price, in any market, at any parameters. Every franc of buy-side
+    price discovery has to come from someone who learned something.
+
+    This has the same status as equation (1): algebraic, and therefore not fixable by
+    reparameterisation. It is one half of why the two sides are not comparable.
+    """
+    m = MARKETS[number]
+    vbar = max(m.prior_ev.values())
+    for s in m.states:
+        if max(m.dividends[t][s] for t in m.types) > vbar:
+            assert _free_riders(m, s) == 0, f"market {number} state {s}"
+
+
+def test_the_papers_sell_sides_are_helped_by_uninformed_agents_and_ours_are_not():
+    """The other half, and the one that IS a parameter choice — so it can be controlled for.
+
+    re < v-bar leaves room for some type's prior expectation to fall below the sell-side RE
+    price, and in every published market with a sell state, some does. Those agents sell at
+    the RE price without having inferred anything, so the sell side gets price discovery
+    the buy side can never get. Markets 6, 7 and 8 have none on either side, which makes
+    them the only markets in which both directions require genuine learning.
+
+    This is measurable in the engine gate and it is large: pooled over seeds 42/43/44 the
+    scripted RE baseline — algorithms that already know the state — produces a buy/sell gap
+    of +0.297 on market 3 and -0.337 / -0.509 on markets 7 and 8. See
+    docs/markets-7-8-equal-width.md.
+    """
+    got = {}
+    for n in sorted(MARKETS):
+        m = MARKETS[n]
+        vbar = max(m.prior_ev.values())
+        sell = [s for s in m.states if max(m.dividends[t][s] for t in m.types) < vbar]
+        got[n] = max((_free_riders(m, s) for s in sell), default=None)
+    # market 1 has no sell state at all under a lettered clue, so it is not in the contrast
+    assert got[1] is None
+    assert {n: got[n] for n in (2, 3, 4, 5)} == {2: 2, 3: 2, 4: 2, 5: 4}
+    assert {n: got[n] for n in CONTROL_MARKETS} == {6: 0, 7: 0, 8: 0}
+
+
+@pytest.mark.parametrize("number", (6, 7, 8))
+def test_the_scripted_re_baseline_cannot_bootstrap_our_sell_sides(number):
+    """Why `make gate7` shows a sell side near zero, stated as arithmetic rather than noise.
+
+    The scripted RE agent infers the state from the last trade PRICE: it takes the nearer
+    RE price and accepts it as a signal only within `_BAND` of it. With no free riders, the
+    only agents willing to trade below v-bar are the six insiders — and they are sellers
+    who would rather take the uninformed's high bids than walk the price down. So the price
+    never enters the sell-side signal band, so nobody learns, so the price never enters the
+    band. The baseline's failure here is a property of a price-level inference rule meeting
+    a market with no free riders, and it is NOT evidence that the engine is broken.
+
+    The rule is deliberately left alone: it is the fixed comparison point for the completed
+    sessions, and changing it would silently rebase every one of them. An LLM agent has the
+    channel the scripted agent lacks — it can see six different seats trying to sell — so
+    the arm measures whether inference from order flow happens at all.
+    """
+    from ps1982.agents.scripted import REAgent
+    m = MARKETS[number]
+    vbar = max(m.prior_ev.values())
+    sell = [s for s in m.states if max(m.dividends[t][s] for t in m.types) < vbar]
+    for s in sell:
+        re = max(m.dividends[t][s] for t in m.types)
+        band_top = re * (1 + REAgent._BAND)
+        assert min(m.prior_ev.values()) > band_top, (
+            f"market {number} state {s}: lowest uninformed valuation "
+            f"{min(m.prior_ev.values()):.0f} vs signal band top {band_top:.0f}")
+    # and the published markets are the other way round, which is why their gate passes
+    for n in (2, 3, 4, 5):
+        p = MARKETS[n]
+        pv = max(p.prior_ev.values())
+        for s in p.states:
+            re = max(p.dividends[t][s] for t in p.types)
+            if re < pv:
+                assert min(p.prior_ev.values()) <= re * (1 + REAgent._BAND)
+
+
+def test_the_seeds_the_arm_actually_runs_are_imbalanced_and_that_is_recorded():
+    """The arm runs seeds 42/43/44 unfiltered. This is what they draw. Not a target — a fact.
+
+    Balance was NOT designed in and NOT selected for: with p(X) = .6 forced by Proposition 1
+    on any equidistant market, an unfiltered draw over nine insider periods is buy-heavy in
+    expectation (5.4 against 3.6), and the sell side is the only separating side. So this
+    arm under-samples the side that carries the result, by construction rather than by
+    accident, and the analysis has to say so. Pinned here so it cannot be quietly forgotten
+    between running the sessions and reporting them.
+    """
+    def insider_states(m, seed):
+        r = m.redrawn(seed)
+        return [r.sequence_states[p - 1] for p in range(1, r.n_periods + 1)
+                if r.sequence_info[p - 1] == "insider"]
+
+    per_seed = {n: {s: insider_states(MARKETS[n], s) for s in (42, 43, 44)} for n in (7, 8)}
+    totals = {n: (sum(v.count("X") for v in per_seed[n].values()),
+                  sum(v.count("Y") for v in per_seed[n].values())) for n in (7, 8)}
+    assert totals[7] == (18, 9), "market 7 draws two buy periods for every sell period"
+    assert totals[8] == (15, 12)
+    for n in (7, 8):
+        assert sum(totals[n]) == 27, "nine insider periods x three sessions"
+
+    # Market 8's seeds 42 and 43 draw the SAME nine insider periods and differ only at
+    # period 14, so that market has two distinct sequences across three sessions, not three.
+    assert per_seed[8][42] == per_seed[8][43]
+    assert MARKETS[8].redrawn(42).sequence_states != MARKETS[8].redrawn(43).sequence_states
+
+    # Market 7's sell periods land late in two of its three sessions, which matters because
+    # the uninformed resting price rises over a session (market 4: -47.8 francs in periods
+    # 1-4 against -10.9 in period 14). A late sell period is therefore measured against a
+    # higher baseline than an early buy period, which inflates sell-side D on its own.
+    late = {}
+    for s in (42, 43, 44):
+        ins = per_seed[7][s]
+        px = [i for i, c in enumerate(ins, 1) if c == "X"]
+        py = [i for i, c in enumerate(ins, 1) if c == "Y"]
+        late[s] = sum(py) / len(py) - sum(px) / len(px)
+    assert late[43] > 3 and late[44] > 3, "seeds 43 and 44 put the sell periods late"
+    assert late[42] < 0, "seed 42 puts them early"

@@ -5,12 +5,15 @@ periods, one prior. The other four markets each break at least one of those assu
 (see docs/markets-1-to-5.md), so they cannot be expressed as a config override; the
 parameters have to become a value that code takes as an argument.
 
-`MARKETS[6]` is NOT one of the paper's. It is the control design of Table 7 in the
-companion paper, whose two informed-trade directions sit the same distance from the
-uninformed level — impossible anywhere in the published family, which needs p > 1/2.
-`PAPER_MARKETS` is what separates the two provenances, and every guard that asserts a
-fact about Plott & Sunder iterates that rather than `MARKETS`. See
-docs/market-6-control.md.
+`MARKETS[6]`, `[7]` and `[8]` are NOT the paper's. Market 6 is the control design of
+Table 7 in the companion paper, whose two informed-trade directions sit the same distance
+from the uninformed level — impossible anywhere in the published family, which needs
+p > 1/2. Markets 7 and 8 are its successors: equidistant AND equal-width, which market 6
+is not (0.875 of D on its buy side against 0.125 on its sell side), and with every insider
+on the same side of each state, which is true of no published market. `PAPER_MARKETS` and
+`CONTROL_MARKETS` separate the provenances, and every guard that asserts a fact about
+Plott & Sunder iterates the first rather than `MARKETS`. See docs/market-6-control.md and
+docs/markets-7-8-equal-width.md.
 
 This module is that value. It deliberately does NOT rewire anything yet: `params.py` is
 untouched and MARKETS[3] is asserted to reproduce it exactly (tests/test_markets.py), so
@@ -538,10 +541,106 @@ MARKETS: dict[int, Market] = {
              "non-separating — equation (1) is independent of the parameters — so "
              "equidistance removes the distance confound and not the blind spot.",
     ),
+    # ------------------------------------------------------------ also not the paper's
+    #
+    # Markets 7 and 8 are the EQUAL-WIDTH controls, and they exist because market 6 only
+    # half-worked. Equidistance fixes the denominator of D = (price - v-bar)/(re - v-bar);
+    # it does nothing to the numerator's slack. With 24 certificates and four agents of the
+    # top type, ANY price between the second-highest and the highest informed valuation
+    # supports the competitive allocation, so a fully competitive price occupies a RANGE of
+    # D rather than a point, of width (top - second)/|re - v-bar|. Market 6 is the most
+    # lopsided market in the family on exactly that measure — 0.875 on the buy side against
+    # 0.125 on the sell side — so it trades the distance confound for an interval-width one.
+    #
+    # These two are equidistant AND equal-width, which market 6 could not be and no
+    # published market is:
+    #
+    #     market   buy dist   sell dist   buy width   sell width   insiders buy/sell
+    #        3       +180        -45        0.556       0.556        X 4/2   Y 0/6
+    #        4       +165        -35        0.606       0.714        X 4/2   Y 0/6
+    #        5       +107.5      -32.5      2.308       0.769        all three net sell
+    #        6        +80        -80        0.875       0.125        X 6/0   Y 0/6
+    #        7       +100       -100        0.300       0.300        X 6/0   Y 0/6
+    #        8       +100       -100        0.200       0.200        X 6/0   Y 0/6
+    #
+    # The last column is the third defect and the one nobody had named: in markets 3 and 4
+    # the "buy" state X has two of six insiders wanting to SELL (type III values X at 125
+    # and 100, below v-bar), and in market 5 all three states carry net sell pressure among
+    # insiders. A state where a 2-to-1 majority of the informed are sellers is not a test of
+    # informed buying. Here every insider wants the same thing in each state.
+    #
+    # Structure is MARKET 4's throughout, sequence included: fourteen periods, and the only
+    # information design in the family with a no-information period at the END as well as
+    # the start. That end period is why market 4 rather than market 3 — it is the only place
+    # the uninformed resting price can be measured AFTER experience, and the pooled
+    # no-information price sits 20-40 francs below v-bar in every market while market 4's
+    # own period 14 sits only 10.9 below. A baseline bias delta inflates sell-side D and
+    # deflates buy-side D by delta/|re - v-bar| on each side, so it is a first-order
+    # confound that cannot be estimated at all without a mature no-information period.
+    # The cost is market 4's zero full-information periods, so this arm adds nothing to the
+    # institutional-component estimate of Section 3.
+    7: Market(
+        number=7,
+        n_per_type=4,
+        insiders_per_type=2,
+        states=("X", "Y"),
+        # DERIVED, not assumed: the design states each type's prior expectation, and
+        # 260 = .6(360) + .4(110) holds for all three types only at p(X) = .6. Same cage as
+        # market 6, and forced by the same proposition — equidistance needs p > 1/2.
+        prior={"X": 0.6, "Y": 0.4},
+        dividends={"I": {"X": 360, "Y": 110},
+                   "II": {"X": 330, "Y": 130},
+                   "III": {"X": 290, "Y": 160}},
+        franc_to_usd=0.003,          # market 4's, as with everything else structural
+        bingo_total=40,              # 24 of 40 balls pay X
+        # MARKET 4's realized sequence, inherited rather than designed. Markets 7 and 8 have
+        # no Table 1 row, `sequence_states` must hold something, and inventing one would be
+        # a design choice made silently. The reported runs use `random_prior` and never
+        # touch this. Note that it is prior-INCONSISTENT under the .6 cage — 6 X in 14
+        # periods against an expected 8.4 — so `paper_exact` is not recommended here; it is
+        # a market-4 comparison run, not this market's own realization.
+        sequence_states=tuple("XYYXYXYYXYXYXY"),
+        sequence_info=_info(14, [(5, 13, "insider")]),
+        announce_no_info=False,
+        note="NOT a Plott & Sunder market. Equidistant AND equal-width control: v-bar 260 "
+             "(type I marginal), informed buy re 360 (+100) and informed sell re 160 "
+             "(-100), and the competitive interval is 30 francs on BOTH sides, so a "
+             "competitive price occupies the same 0.300 of D either way. Every insider "
+             "wants the same side in each state (6/0 on X, 0/6 on Y), which is not true of "
+             "markets 3, 4 or 5. Structure is market 4's, sequence included.",
+    ),
+    8: Market(
+        number=8,
+        n_per_type=4,
+        insiders_per_type=2,
+        states=("X", "Y"),
+        prior={"X": 0.6, "Y": 0.4},   # derived as in market 7: 300 = .6(380) + .4(180)
+        dividends={"I": {"X": 380, "Y": 180},
+                   "II": {"X": 350, "Y": 200},
+                   "III": {"X": 400, "Y": 100}},
+        franc_to_usd=0.003,
+        bingo_total=40,
+        sequence_states=tuple("XYYXYXYYXYXYXY"),   # market 4's, as in market 7
+        sequence_info=_info(14, [(5, 13, "insider")]),
+        announce_no_info=False,
+        note="NOT a Plott & Sunder market. Market 7's twin, with the three types' ROLES "
+             "separated: type I sets v-bar at 300 and tops neither state, type II tops the "
+             "sell state (200) and type III the buy state (400). Everywhere else in the "
+             "family — markets 3, 4, 6 and 7 — the marginal type is also the buy-state "
+             "holder, so the units need not change hands when the buy signal arrives and "
+             "only the price must move. Here both states require the same reallocation "
+             "away from the same incumbent. Equidistant at +/-100 and equal-width at 20 "
+             "francs (0.200 of D) on both sides, the tightest in the family.",
+    ),
 }
 
-# The markets that are Plott & Sunder's. Market 6 is ours, and a guard that asserts
-# something the PAPER says — which markets announced a no-information period, which one
-# ends uninformed, how many insiders each has — must iterate this and not `MARKETS`,
+# The markets that are Plott & Sunder's. Markets 6, 7 and 8 are ours, and a guard that
+# asserts something the PAPER says — which markets announced a no-information period, which
+# one ends uninformed, how many insiders each has — must iterate this and not `MARKETS`,
 # or a control design starts having to satisfy claims about an experiment it is not in.
 PAPER_MARKETS: tuple[int, ...] = (1, 2, 3, 4, 5)
+
+# Ours. Listed rather than derived as `set(MARKETS) - set(PAPER_MARKETS)` so that adding a
+# market to `MARKETS` and forgetting its provenance fails a test instead of being silently
+# absorbed into whichever group the subtraction puts it in.
+CONTROL_MARKETS: tuple[int, ...] = (6, 7, 8)

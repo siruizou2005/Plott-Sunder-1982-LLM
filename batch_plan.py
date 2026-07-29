@@ -78,36 +78,48 @@ def rounds_arm():
             for r in ROUNDS_ARM for arm, seed in sorted(ROUNDS_ARM_SEEDS.items())]
 
 
-# The control arm. Market 6 is the equidistant control of Table 7 — not one of Plott &
-# Sunder's — where the informed-buy and informed-sell targets are both 80 francs from the
-# uninformed level, so a difference between the two sides cannot be the distance. Three
-# `random_prior` sessions on DeepSeek plus a five-period Gemini prefix of the first.
+# The control arm. Markets 7 and 8 are the equal-width controls — neither is one of Plott &
+# Sunder's — where the informed-buy and informed-sell targets are both 100 francs from the
+# uninformed level AND a merely-competitive price occupies the same share of the D scale on
+# each side. Six `random_prior` sessions on DeepSeek, three per market.
+#
+# It supersedes the market-6 arm, which was designed first and half-solved the problem:
+# market 6 is equidistant but its competitive interval is 0.875 of D on the buy side against
+# 0.125 on the sell side, the most lopsided in the family. Market 6's scenarios and
+# `make gate6` are kept — the market is still the one Table 7 prints — but it is not what
+# this arm runs. See docs/markets-7-8-equal-width.md.
 #
 # Deliberately NOT folded into plan(), for the same reason as the rounds arm: those 26
-# sessions are the replication of a published experiment, and this is a market that
-# experiment does not contain. Folding it in would also renumber nothing but would make
-# `batch_plan.py` claim market 6 is one of the paper's.
+# sessions are the replication of a published experiment, and these are markets that
+# experiment does not contain. Folding them in would make `batch_plan.py` claim they are
+# the paper's.
 #
 # The seeds are the user's 42/43/44 rather than the BASE_SEED scheme, which keeps them
-# unambiguously outside it. Checked before running rather than chosen for it: they draw 13
-# buy-side and 11 sell-side insider periods between them, and one full-information period
-# of each state per session.
+# unambiguously outside it. UNFILTERED, and the imbalance that produces is a known cost, not
+# an oversight: Proposition 1 forces p(X) > 1/2 on any equidistant market, so nine insider
+# periods are buy-heavy in expectation (5.4 against 3.6) and the sell side — the only
+# separating side — is under-sampled by construction. Market 7 draws 18 buy / 9 sell across
+# the three seeds, market 8 draws 15 / 12, and market 8's seeds 42 and 43 draw the same nine
+# insider periods. Filtering seeds on a stated balance criterion and designing the sequence
+# outright were both considered and declined; the seeds were given, not searched.
+# `tests/test_markets.py::test_the_seeds_the_arm_actually_runs_are_imbalanced_and_that_is_recorded`
+# pins every number above so it survives to the write-up.
 CONTROL_ARM_SEEDS = (42, 43, 44)
-CONTROL_SCENARIO = "scenarios/m6_control.yaml"
-CONTROL_GEMINI = ("control/m6_gem_quick", "scenarios/m6_gemini_quick.yaml", 42)
+CONTROL_ARM_MARKETS = (7, 8)
 
 
-def control_arm(with_gemini: bool = True):
-    """[(name, scenario, seed)] — the equidistant control, market 6.
+def control_arm(markets: tuple[int, ...] = CONTROL_ARM_MARKETS):
+    """[(name, scenario, seed)] — the equal-width controls, markets 7 and 8.
 
-    The Gemini session reuses seed 42 and truncates to five periods, so it is a literal
-    PREFIX of `control/m6_ctrl_42`: same draw, same round order, same seat->name map. Any
-    difference over those five periods is the model. Same pairing logic as m3_gem_paper.
+    Both markets run the SAME three seeds. That does not pair them: `Market.redrawn` keys
+    its RNG on `ps1982-m{number}-seq-{seed}`, so seed 42 draws a different sequence for
+    market 7 than for market 8, and the A-vs-B comparison therefore rests on two balanced-
+    enough draws rather than on one shared one. Pairing was available (market 8 reproduces
+    market 7's seed-42 draw at seed 940) and was declined for the same reason the seeds were
+    not filtered.
     """
-    out = [(f"control/m6_ctrl_{s}", CONTROL_SCENARIO, s) for s in CONTROL_ARM_SEEDS]
-    if with_gemini:
-        out.append(CONTROL_GEMINI)
-    return out
+    return [(f"control/m{n}_ctrl_{s}", f"scenarios/m{n}_control.yaml", s)
+            for n in markets for s in CONTROL_ARM_SEEDS]
 
 
 def pending():
@@ -121,9 +133,11 @@ if __name__ == "__main__":
             print(f"{name}\t{sc}\t{seed}\t{r}")
         sys.exit(0)
     if "--control-arm" in sys.argv:
-        # --no-gemini leaves the three DeepSeek sessions, which is what the cloud box runs;
-        # the Gemini prefix runs on the laptop against Vertex and is launched separately.
-        for name, sc, seed in control_arm(with_gemini="--no-gemini" not in sys.argv):
+        # -m7 / -m8 narrows to one market; with neither, both run. There is no Gemini
+        # session in this arm.
+        only = tuple(int(a[2:]) for a in sys.argv[1:]
+                     if a.startswith("-m") and a[2:].isdigit())
+        for name, sc, seed in control_arm(only or CONTROL_ARM_MARKETS):
             print(f"{name}\t{sc}\t{seed}")
         sys.exit(0)
     show = "--show" in sys.argv

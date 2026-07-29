@@ -1,0 +1,26 @@
+# Engine correctness gate for MARKET 7, an equal-width control. Zero API cost.
+# Zero-intelligence baseline: random bids inside the budget constraint. Produces noise,
+# and is here so that 'the engine reaches the target' cannot be an artefact of the
+# institution alone.
+#
+# Run on the seed-42 draw — the market m7_ctrl_42 actually faces — rather than on the
+# inherited `paper_exact` sequence. A gate that passes on a sequence nothing runs is a
+# gate on the wrong market.
+run_name: m7_scripted_zi
+seed: 42
+sequence_preset: random_prior
+market: 7
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # market 4's design, which this inherits
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: zi
