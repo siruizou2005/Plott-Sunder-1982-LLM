@@ -468,7 +468,16 @@ MARKETS: dict[int, Market] = {
                    "II": {"X": 300, "Y": 150},
                    "III": {"X": 125, "Y": 175}},
         franc_to_usd=0.003,
-        sequence_states=tuple("YYYXYYXYXYYX"),
+        # Period 1 is X, not Y. Table 1's rotated column is hard to read in the scan and
+        # was first transcribed as Y; Figure 4's own x-axis label reads `1(X)`, and the
+        # author confirmed X against the original. Period 1 is a NO-INFORMATION period, so
+        # no RE/PI prediction, no separating flag and no D depends on it — the correction
+        # changes only the dividend actually paid in period 1 (type I 100 -> 400, II 150 ->
+        # 300, III 175 -> 125), i.e. what agents see in their own year-1 record.
+        # Sessions already run carry their own sequence in `session_start`, and
+        # `metrics._market_for` rebuilds from that, so completed runs keep being scored as
+        # they were actually run.
+        sequence_states=tuple("XYYXYYXYXYYX"),
         sequence_info=_info(12, [(3, 10, "insider"), (11, 12, "all")]),
         note="The market already implemented in params.py.",
     ),

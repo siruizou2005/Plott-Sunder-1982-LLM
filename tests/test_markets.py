@@ -246,7 +246,13 @@ M3_BEFORE = {
     "market_supply": 24,
     "franc_to_usd": 0.003,
     "states": ["X", "Y"],
-    "sequence_states": tuple("YYYXYYXYXYYX"),
+    # ONE deliberate change since this snapshot was frozen: period 1 is X, not Y.
+    # The pre-refactor constant had Y, transcribed from Table 1's rotated column in the
+    # scan; Figure 4's own x-axis reads `1(X)` and the author checked the original. This
+    # is a correction to a transcription error, not drift — and it is the only cell that
+    # has moved, which is exactly what the frozen copy exists to demonstrate. Period 1 is
+    # a no-information period, so nothing in TABLE_3, FOOTNOTE_6 or THEORY_BEFORE changes.
+    "sequence_states": tuple("XYYXYYXYXYYX"),
     "sequence_info": ("none", "none") + ("insider",) * 8 + ("all", "all"),
 }
 
