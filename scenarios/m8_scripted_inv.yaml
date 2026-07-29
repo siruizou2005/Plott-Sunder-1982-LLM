@@ -1,0 +1,28 @@
+# The INVERSION baseline: price-anchored belief formation. Zero API cost.
+#
+# An uninformed agent adopts whatever belief makes the last traded price correct FOR
+# ITSELF, so its valuation IS the price and it never pushes against it. Only the informed,
+# whose value is pinned by their card, move anything. See ps1982/agents/scripted.py.
+#
+# This is the third model, alongside PI and RE. It is run on ALL five scorable markets on
+# the same sequences the LLM sessions used, because its whole claim is that ONE rule
+# reproduces both the published family's buy/sell split AND its collapse in the
+# equidistant controls. A rule that fits only one of the two explains nothing.
+run_name: m8_scripted_inv
+seed: 42
+sequence_preset: random_prior
+market: 8
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  announce_no_info_period: false   # market 4's design, which this inherits
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: inv

@@ -282,4 +282,71 @@ class REAgent(ScriptedAgent):
         return float(self.dividends[guess])
 
 
-BOT_REGISTRY = {"zi": ZIAgent, "pi": PIAgent, "re": REAgent}
+class INVAgent(ScriptedAgent):
+    """Price-anchored belief formation: read your own value OUT of the price.
+
+    The rule is one line. An uninformed agent sees the last traded price p and adopts
+    whatever belief makes p correct FOR ITSELF — it solves
+
+        p = q d_self(X) + (1-q) d_self(Y)
+
+    for q and uses that as its posterior. By construction its valuation is then p, so an
+    uninformed agent is exactly indifferent at the going price and never pushes against it.
+
+    Contrast the other two learners. `pi` never conditions on price at all. `re` conditions
+    on price to infer the STATE, then values the security from the state — which is the
+    right thing to do and is what the RE model assumes. This agent conditions on price to
+    infer its own VALUE and back-fills a belief, which is only the same thing if it happens
+    to be the marginal type. Everyone assuming they are marginal is the whole content of it.
+
+    Two consequences, and they are what make it a distinct model rather than a variant:
+
+      1. EVERY price is self-confirming, so this rule pins down no price at all. It gives a
+         continuum where PI and RE each give a point. What determines the price is history —
+         where it opens, and who has a reason to push. That is the continuous version of the
+         Beja/Milgrom indeterminacy Plott & Sunder list on p. 677 and set aside, theirs
+         being restricted to the set of RE prices.
+      2. Nothing in the rule references RE, so displacement from the opening level is set by
+         how far the informed can drag the price with the inventory and cash they have — not
+         by how far away RE is. That is the claim the equidistant markets were built to test.
+
+    The clamp is not a fudge: an agent cannot rationalise a price outside its own dividend
+    range under ANY belief, so outside that range it stops following and becomes a
+    counterparty. That is where the rule stops being self-confirming and supplies the only
+    restoring force in the model.
+
+    Trading behaviour is inherited unchanged from `ScriptedAgent`, so this differs from
+    `re`, `pi` and `zi` in the valuation rule and in nothing else.
+    """
+
+    kind = "inv"
+    basis = "price"
+
+    def value(self, ctx) -> float:
+        card = getattr(ctx, "card", None)
+        if card is not None:
+            # Informed: use the card properly. `posterior_from_card` is degenerate on a
+            # letter and Bayesian on market 1's ten-draw sample, so ONE branch covers both.
+            # `re` and `pi` test `card in states` instead and therefore misread market 1 —
+            # a limitation the README documents. Not inherited here: the rule under test
+            # concerns what UNINFORMED agents do, so the informed branch should be correct
+            # in every market or market 1 cannot be scored at all.
+            post = self.mkt.posterior_from_card(card)
+            return float(sum(post[s] * self.dividends[s] for s in self.states))
+        prices = _trade_prices(ctx.market_log)
+        if not prices:
+            return float(self.prior_ev)                # nothing to invert yet -> the prior
+        lo = min(self.dividends[s] for s in self.states)
+        hi = max(self.dividends[s] for s in self.states)
+        return float(min(max(prices[-1], lo), hi))
+
+    def _posterior(self, v: float) -> dict:
+        """The belief implied by that valuation — which is what the agent 'reports'.
+
+        Inherited verbatim from ScriptedAgent for two states; it inverts the valuation
+        against this agent's own dividends, which is exactly the rule above run backwards.
+        """
+        return super()._posterior(v)
+
+
+BOT_REGISTRY = {"zi": ZIAgent, "pi": PIAgent, "re": REAgent, "inv": INVAgent}

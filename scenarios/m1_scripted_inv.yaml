@@ -1,0 +1,28 @@
+# INVERSION baseline on market 1 — OUT-OF-SAMPLE.
+#
+# The rule was formulated on markets 3-5 and 7-8. Markets 1 and 2 were never looked at
+# while it was being written, and the human numbers for them are the ones your Section 2
+# derives as market 1-2 seller ~ -0.57 and buyer ~ +0.59 -- a NEGATIVE seller side, which
+# no other market in the family has. If the rule reproduces that without being told, it
+# was not fitted.
+#
+# Market 1 note: nine investors, one insider per type, and an imperfect ten-draw clue.
+# INVAgent reads it through Market.posterior_from_card, so it is scorable here; `re` and
+# `pi` are not (see README).
+run_name: m1_scripted_inv
+seed: 20250727
+sequence_preset: paper_exact
+market: 1
+sessions: 1
+max_rounds_per_period: 3
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: inv

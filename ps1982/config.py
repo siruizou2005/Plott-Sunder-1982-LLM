@@ -155,7 +155,7 @@ class Config(BaseModel):
             raise ValueError(f"sequence_preset {self.sequence_preset!r} is market-3 only; "
                              f"market {self.market} takes 'paper_exact' or {RANDOM_PRESET!r}")
         for a in self.agents:
-            if a.kind not in ("llm", "zi", "pi", "re"):
+            if a.kind not in ("llm", "zi", "pi", "re", "inv"):
                 raise ValueError(f"unknown agent kind {a.kind!r}")
         return self
 
