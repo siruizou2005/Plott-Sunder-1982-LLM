@@ -35,7 +35,7 @@ cp .env.example .env          # add your own keys
 # 1. free — check parameters and rendered prompts
 ./.venv/bin/python -m ps1982 validate -s scenarios/m3_paper.yaml
 
-# 2. free — 441 offline tests
+# 2. free — 550 offline tests
 ./.venv/bin/pytest
 
 # 3. free — the engine correctness gate (see below); run this first
@@ -55,7 +55,7 @@ cd web && npm start           # http://127.0.0.1:8100
 
 ---
 
-## The five markets, plus a control
+## The five markets, plus three controls
 
 The paper's five are five **treatments, not five repetitions** — roster size, prior, number of states,
 information precision and period count all differ.
@@ -68,17 +68,72 @@ information precision and period count all differ.
 | 4 | 14 | 12 | X/Y | .4 | 1-4 none · 5-13 insider · **14 none** | The only market with a no-information period at the **end** as well as the start |
 | 5 | 13 | 12 | **X/Y/Z** | .35/.25/.40 | 1-3 none · 4-13 insider | **Three states** |
 | 6 | 12 | 12 | X/Y | **.6** | 1-2 none · 3-10 insider · 11-12 all | **Not the paper's.** The equidistant control: both informed-trade directions are 80 francs from the uninformed level |
+| 7 | 14 | 12 | X/Y | **.6** | market 4's | **Not the paper's.** Equidistant at ±100 **and** equal-width: a competitive price occupies 0.300 of the discovery scale on each side |
+| 8 | 14 | 12 | X/Y | **.6** | market 4's | **Not the paper's.** Market 7 with the three types' **roles separated** — one sets the uninformed level, one tops each state. 0.200 on each side |
 
-Every parameter's provenance is in [`docs/markets-1-to-5.md`](docs/markets-1-to-5.md), and
-market 6's in [`docs/market-6-control.md`](docs/market-6-control.md).
+Every parameter's provenance is in [`docs/markets-1-to-5.md`](docs/markets-1-to-5.md),
+market 6's in [`docs/market-6-control.md`](docs/market-6-control.md), and markets 7 and 8's
+in [`docs/markets-7-8-equal-width.md`](docs/markets-7-8-equal-width.md).
 `ps1982/markets.py` is that document as executable data, and `tests/test_markets.py` checks
 it back against the paper's Table 1, Table 2, Table 3 and footnote 5, cell by cell.
+`PAPER_MARKETS` and `CONTROL_MARKETS` keep the two provenances apart, so a guard asserting
+something Plott & Sunder did can never be satisfied by a market they never ran.
 
-Market 6 is ours, not Plott & Sunder's. Everywhere in their family the two informed-trade
-directions sit at different distances from the uninformed level — market 4 asks the buy
-side for +165 francs and the sell side for −35 — so a normalised measure flatters one side.
-Market 6 removes that, and only that: the buy side stays non-separating, because that
-identity does not depend on the parameters.
+### Why three controls and not one
+
+Price discovery is measured as `D = (price − v̄) / (re − v̄)`, the share of the distance from
+the uninformed level to the rational-expectations price that the price actually travelled.
+Three separate things make that number mean different things on the buy and the sell side,
+and the published family has all three.
+
+1. **The distance differs.** Market 4 asks the buy side for +165 francs and the sell side
+   for −35, so the same franc of movement scores five times higher on the sell side.
+   **Market 6** equalises it at 80 each way.
+2. **The target is a range, not a point.** With 24 certificates and four agents of the top
+   type, any price between the second-highest and the highest informed valuation supports
+   the competitive allocation — so a *merely competitive* price already occupies a band of
+   D. In market 6 that band is 0.875 wide on the buy side and 0.125 on the sell side, the
+   most lopsided in the family. **Markets 7 and 8** make it equal: 0.300 and 0.200 each way.
+3. **The informed do not always agree.** A "buy state" only means `re > v̄`, and re is the
+   *top* type's valuation. In markets 3 and 4 two of six insiders want to **sell** in the
+   buy state; in market 5 all three states carry net sell pressure among insiders. In
+   markets 6, 7 and 8 all six insiders want the same thing in each state.
+
+Markets 7 and 8 are identical except for **which type holds when**. Everywhere else in the
+family the type that sets v̄ is also the buy-state holder, so the buy signal needs no
+reallocation while the sell signal does — an asymmetry the first two fixes do not touch.
+Market 8 gives each type one job, so both states demand the same reallocation.
+
+### The free-rider identity
+
+Building those controls turned up something that applies to the published markets too.
+
+**On the buy side no uninformed agent can ever help.** v̄ is `max_t E[dividend_t]`, the
+largest valuation any uninformed agent can hold, and a buy state is *defined* by `re > v̄`.
+So no uninformed agent values a certificate above the buy-side RE price — in any market, at
+any parameters. Every franc of buy-side discovery must come from someone who learned
+something.
+
+**The sell side has no such identity, and every published market has helpers**: some type's
+prior expectation falls *below* the sell-side RE price, so those agents sell at it having
+inferred nothing.
+
+| | market 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| uninformed agents who reach the **sell** target without learning | 2/6 | 2/6 | 2/6 | **4/6** | 0 | 0 | 0 |
+| the same on the **buy** side | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+So part of "informed sellers reveal, informed buyers conceal" is an accounting property of
+the parameters. It is measurable: run the *scripted* RE baseline — algorithms that already
+know the state — and market 3 shows a buy/sell gap of **+0.297** with no strategy involved,
+while markets 7 and 8 show −0.337 and −0.509. Markets 6, 7 and 8 are the only markets in
+which both directions require genuine inference, which is also why their scripted sell side
+sits near zero: with no free riders the price never reaches the level a price-based
+inference rule needs, so nobody learns.
+
+The scripted rule is deliberately **not** changed for them — it is the fixed comparison
+point for the completed sessions. LLM runs on these markets are read as a difference from
+that measured baseline, never against 1.0.
 
 **The theory predictions are derived, not transcribed.** `Market.theory_price()` computes
 RE and PI from the dividends and the prior; the result matches every cell the paper prints
@@ -107,7 +162,9 @@ Before spending anything on model calls, run a market of **scripted** agents. Ea
 should produce its own model's outcome; if it does not, the bug is in the engine.
 
 ```bash
-make gate
+make gate                    # market 3, the base case
+make gate6                   # the equidistant control
+make gate7 && make gate8     # the equal-width controls, on the seeds their arm runs
 ```
 
 | Agent | Y insider periods | X insider periods | E% (insider periods) | Reading |
@@ -119,10 +176,29 @@ make gate
 The point is not that `re` converges — it is that `pi` **does not**. The engine can express
 both models, so a run that lands on one of them is telling you something about the agents.
 
-> **A known limitation.** The scripted `re` baseline cannot read market 1's ten-mark card
+The gates are kept separate rather than folded together, so that a red `make gate` always
+means *the replication* is broken. The control markets have their own gate because their
+baseline behaves differently — and that difference is a result, not a fault:
+
+| market | scripted `re`, buy side | sell side | the arm's own null gap |
+|---|---:|---:|---:|
+| 3 | 0.733 (n=9) | 1.030 (n=15) | **+0.297** |
+| 6 | 0.839 (n=13) | 0.633 (n=11) | −0.206 |
+| 7 | 0.886 (n=18) | 0.549 (n=9) | −0.337 |
+| 8 | 0.923 (n=15) | 0.414 (n=12) | −0.509 |
+
+Pooled over seeds 42/43/44. The sell side of markets 6–8 is *bimodal* rather than merely
+low — market 7's nine sell periods are four near 1.0 and five near 0.1 — because with no
+free riders (above) the price never reaches the level a price-based inference rule needs.
+An LLM agent has the channel the scripted agent lacks: it can see six different seats
+trying to sell and nobody bidding. Whether that is enough is what the control arm measures.
+
+> **Two known limitations.** The scripted `re` baseline cannot read market 1's ten-mark card
 > (it tests `card in states`, which a sample never satisfies) and falls back to price
-> inference. LLM agents are unaffected — the mechanism is in their prompt — but `re` is not
-> a valid reference for market 1.
+> inference, so it is not a valid reference for market 1. And its inference is over price
+> *level* only, which is what the table above is measuring. LLM agents are unaffected by
+> the first — the mechanism is in their prompt. Neither is fixed, because the rule is the
+> fixed comparison point for every completed session.
 
 ---
 
@@ -147,7 +223,7 @@ web/server/      Express + WebSocket; reads runs/, paces replay, tails live runs
 web/src/         React + ECharts + zustand; i18n.ts holds the whole 中/EN dictionary
 docs/            experiments.md · markets-1-to-5.md · market-6-control.md
                  paper-verification.md · design-deltas.md
-tests/           441 offline tests; nothing here touches the network
+tests/           550 offline tests; nothing here touches the network
 ```
 
 ### runs/ is grouped by purpose
@@ -332,8 +408,29 @@ it **from the run** rather than keeping its own copy. The viewer's copy used to 
 ./resume_batch.sh                          # resume from the last settled period
 ```
 
-The plan is **26 sessions**: five per market for DeepSeek (two on the paper's own sequence,
-three on redraws) plus one Gemini session on market 3. Measured cost ≈ $50 over 5–6 hours.
+The main plan is **26 sessions**: five per market for DeepSeek (two on the paper's own
+sequence, three on redraws) plus one Gemini session on market 3. Measured cost ≈ $50 over
+5–6 hours.
+
+Two follow-up arms sit outside it, deliberately — those 26 sessions are the replication of
+a published experiment, and these vary something the experiment did not have:
+
+```bash
+./.venv/bin/python batch_plan.py --rounds-arm    # market 4 at 4, 5 and 6 rounds
+./run_rounds_arm.sh                              # 6 sessions
+
+./.venv/bin/python batch_plan.py --control-arm   # markets 7 and 8, seeds 42/43/44
+./run_control_arm.sh                             # 6 sessions, ≈ $15 over 8–10 hours
+MARKETS=-m7 ./run_control_arm.sh                 # one market's three
+```
+
+The control arm runs its seeds **unfiltered**, and the imbalance that produces is recorded
+rather than fixed: equidistance forces `p(buy) > 1/2`, so nine insider periods are
+buy-heavy in expectation and the *separating* side is under-sampled by construction —
+market 7 draws 18 buy / 9 sell, market 8 draws 15 / 12. Filtering seeds on a criterion
+fixed in advance, and designing the sequence outright, were both considered and declined; a
+filtered seed is a chosen seed. Every consequence is pinned in `tests/test_markets.py`
+rather than left to prose.
 
 **Concurrency is bounded structurally, not statistically.** A session drives its phases on
 one thread, so at most `broadcast_workers` of its requests are in flight at any instant —
