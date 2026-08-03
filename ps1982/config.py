@@ -135,7 +135,19 @@ class Config(BaseModel):
     sessions: int = 1
     max_rounds_per_period: int = 3          # design doc §7: 2-3 rounds per period
     periods: int | None = None              # None = the market's own count; smaller for smoke
-    broadcast_workers: int = 12             # the only concurrency point in the engine
+    # Caps the engine's TWO wide pools — the broadcast (engine.py:352) and the period-end
+    # notes (engine.py:666). A third pool, the two trade notes after a settlement
+    # (engine.py:289), is fixed at 2 and is not covered by this.
+    #
+    # It is nonetheless the whole story for load, because the pools are never open at the
+    # same time: a session drives its phases on one thread and every pool is entered
+    # through a blocking `list(pool.map(...))` inside a `with`, so the pool has closed
+    # before the next phase begins. In-flight requests per session are therefore bounded by
+    # max(broadcast_workers, 2), and `sessions x broadcast_workers` is a mathematical
+    # ceiling rather than a statistical hope — which is what the scenario files' concurrency
+    # arithmetic rests on. Measured mean is ~1.9 per session; the ceiling is reached only
+    # when every session happens to be mid-broadcast.
+    broadcast_workers: int = 12
     rules: Rules = Field(default_factory=Rules)
     agents: list[AgentSpec] = Field(default_factory=lambda: [AgentSpec()])
     pricing: Pricing = Field(default_factory=Pricing)

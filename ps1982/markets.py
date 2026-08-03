@@ -15,6 +15,13 @@ on the same side of each state, which is true of no published market. `PAPER_MAR
 Plott & Sunder iterates the first rather than `MARKETS`. See docs/market-6-control.md and
 docs/markets-7-8-equal-width.md.
 
+`MARKETS[92]` to `[95]` are a third family and are not designs at all. Each runs its base
+market — 2, 3, 4 or 5 — unchanged through a stated period and then transmits nothing, so
+its uninformed tail measures where price rests against v-bar at the indices that market's
+insider periods occupy. They exist because discovery divides by (re - v-bar), which on the
+published selling side is small enough that the sag is a correction of about 1.0 to a
+selling-side D. `STOPPED_MARKETS` is their group; see docs/markets-92-95-stopped.md.
+
 This module is that value. It deliberately does NOT rewire anything yet: `params.py` is
 untouched and MARKETS[3] is asserted to reproduce it exactly (tests/test_markets.py), so
 the data is proven right before ~200 call sites start depending on it.
@@ -642,6 +649,93 @@ MARKETS: dict[int, Market] = {
              "francs (0.200 of D) on both sides, the tightest in the family.",
     ),
 }
+
+
+# ------------------------------------------------- the information-stops variants
+#
+# Markets 92-95 run their base market's design UNCHANGED up to a stated period and then
+# transmit nothing for the rest of the session. They estimate one nuisance parameter: how
+# far below v-bar price rests when no information is in play, at the period indices where
+# the insider periods actually sit.
+#
+# Why that parameter decides a result. Discovery divides by (re - v-bar), and on the
+# selling side of the published family that denominator is small — -26.7 francs in market
+# 2, -45 in market 3, -35 in market 4, -32.5 in market 5. Market 4's own period 14, the one
+# mature no-information observation the family contains, measures the sag at -32.5 francs
+# over eleven sessions. Carried onto those denominators that is a correction of 1.22, 0.72,
+# 0.93 and 1.00 to a selling-side D — the same size as the D = 1.08 the agents post on the
+# conceded cells of markets 2-5. Whether that 1.08 is aggregation or institutional sag is
+# therefore not a refinement; it is the result.
+#
+# And it cannot be settled from what exists. Markets 2, 3 and 5 carry no-information
+# periods only at 1-4, 1-2 and 1-3 — every one a cold start, not one mature. Market 4 alone
+# ends uninformed, which is why its eleven sessions are the only mature figure in the
+# family and why it is the only base market here that is not measuring a gap.
+#
+# Why STOP the information rather than remove it. A market that never had an insider is a
+# different object from one that has had insiders and then stops: if being picked off makes
+# the uninformed shade their bids, a never-informed market understates the sag, and the
+# correction under-corrects in the same direction as the effect under study. Running the
+# base market's own schedule up to `last_informed` makes every period before the stop
+# design-identical to the real market, so the first uninformed period after it is that
+# market's own next period with the information removed and nothing else changed.
+#
+# Numbered 9x so the units digit names the base: 92 is market 2's, 95 is market 5's.
+def _stopped_variant(base: int, number: int, last_informed: int) -> Market:
+    """`base`, unchanged through `last_informed`, uninformed for every period after it.
+
+    Roster, prior, dividends, period count and realized states are the base market's, so
+    the two markets are comparable period by period and the variant's uninformed tail sits
+    at the indices the base market's insider periods occupy.
+    """
+    m = MARKETS[base]
+    info = tuple(cond if p <= last_informed else "none"
+                 for p, cond in enumerate(m.sequence_info, start=1))
+    kept = sum(1 for c in info if c != "none")
+    return Market(**{**m.__dict__,
+                     "number": number,
+                     "sequence_info": info,
+                     # A clue dealt in a period that no longer carries information would be
+                     # a card handed out in a period the engine calls uninformed. Only
+                     # market 1 has these and it has no variant, but a filter that is
+                     # correct costs nothing and a stale card would be silent.
+                     "paper_clue_cards": {p: c for p, c in m.paper_clue_cards.items()
+                                          if p <= last_informed},
+                     "public_clue_periods": tuple(p for p in m.public_clue_periods
+                                                  if p <= last_informed),
+                     "note": f"NOT a Plott & Sunder market. Market {base} run unchanged "
+                             f"through period {last_informed} — {kept} informed periods, "
+                             f"the base market's own — and uninformed for periods "
+                             f"{last_informed + 1}-{m.n_periods}. Measures where price "
+                             f"rests against v-bar with no information in play, in a "
+                             f"market that has already had insiders, at the indices "
+                             f"market {base}'s insider periods occupy."})
+
+
+# `last_informed` is chosen per market as the largest stop that still leaves the tail
+# covering the base market's insider indices, subject to at least three informed periods
+# before it — enough that the market has been traded against insiders before the first
+# measured period.
+#
+#   92  m2 (11p, none 1-4 · all 5-6 · insider 7-11)  -> stop 8:  tail 9-11,  insider median 9
+#   93  m3 (12p, none 1-2 · insider 3-10 · all 11-12) -> stop 5:  tail 6-12,  insider median 6.5
+#   94  m4 (14p, none 1-4 · insider 5-13 · none 14)  -> stop 7:  tail 8-14,  insider median 9
+#   95  m5 (13p, none 1-3 · insider 4-13)            -> stop 6:  tail 7-13,  insider median 8.5
+#
+# 94 is the VALIDATION case, not a gap: market 4's real period 14 already measures the sag
+# at -32.5 francs over eleven sessions, so 94's period 14 measures the same period of the
+# same market with six uninformed periods before it instead of nine insider ones. If the
+# two agree, the assumption every other variant rests on — that a stopped market's sag is
+# the real market's sag — has been tested rather than asserted.
+MARKETS[92] = _stopped_variant(2, 92, last_informed=8)
+MARKETS[93] = _stopped_variant(3, 93, last_informed=5)
+MARKETS[94] = _stopped_variant(4, 94, last_informed=7)
+MARKETS[95] = _stopped_variant(5, 95, last_informed=6)
+
+# The information-stops variants. Separate from CONTROL_MARKETS because they test no design
+# question — they estimate a nuisance parameter that the published markets' D is measured
+# against, on the published markets' own parameters.
+STOPPED_MARKETS: tuple[int, ...] = (92, 93, 94, 95)
 
 # The markets that are Plott & Sunder's. Markets 6, 7 and 8 are ours, and a guard that
 # asserts something the PAPER says — which markets announced a no-information period, which

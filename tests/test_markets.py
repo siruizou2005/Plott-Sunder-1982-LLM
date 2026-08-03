@@ -18,7 +18,8 @@ from __future__ import annotations
 import pytest
 
 from ps1982 import params
-from ps1982.markets import MARKETS, PAPER_MARKETS, CONTROL_MARKETS, sample_posterior
+from ps1982.markets import (MARKETS, PAPER_MARKETS, CONTROL_MARKETS, STOPPED_MARKETS,
+                            sample_posterior)
 
 ALL = list(MARKETS.values())
 # The paper's own five. A guard that asserts something Plott & Sunder DID — which markets
@@ -682,11 +683,81 @@ def test_market_6_is_not_one_of_the_papers():
     not silently acquire a row for a market they never printed."""
     assert 6 not in PAPER_MARKETS
     assert 6 not in TABLE_3 and 6 not in FOOTNOTE_6
-    assert set(MARKETS) == set(PAPER_MARKETS) | set(CONTROL_MARKETS)
+    assert set(MARKETS) == set(PAPER_MARKETS) | set(CONTROL_MARKETS) | set(STOPPED_MARKETS)
     assert set(PAPER_MARKETS) & set(CONTROL_MARKETS) == set()
-    for n in CONTROL_MARKETS:
+    assert set(STOPPED_MARKETS) & (set(PAPER_MARKETS) | set(CONTROL_MARKETS)) == set()
+    for n in set(CONTROL_MARKETS) | set(STOPPED_MARKETS):
         assert n not in TABLE_3 and n not in FOOTNOTE_6
         assert "NOT a Plott & Sunder market" in MARKETS[n].note
+
+
+# (variant, base, last informed period). The stop is a design choice per market, so it is
+# pinned here rather than recomputed — recomputing it would let the choice drift.
+STOPPED = ((92, 2, 8), (93, 3, 5), (94, 4, 7), (95, 5, 6))
+
+
+def test_stopped_variants_change_only_the_information_schedule():
+    """The variants exist to estimate the resting level of price for their base market's D.
+    If they differed from that market in anything but the schedule, what they measure would
+    be some other market's baseline."""
+    for n, base, _ in STOPPED:
+        v, b = MARKETS[n], MARKETS[base]
+        # everything the price level depends on is the base market's
+        assert v.prior == b.prior and v.dividends == b.dividends
+        assert v.n_per_type == b.n_per_type and v.insiders_per_type == b.insiders_per_type
+        assert v.states == b.states and v.sequence_states == b.sequence_states
+        assert v.n_periods == b.n_periods and v.bingo_total == b.bingo_total
+        assert v.franc_to_usd == b.franc_to_usd
+        assert v.announce_no_info == b.announce_no_info
+        assert (v.dividends_constant_is_common_knowledge
+                == b.dividends_constant_is_common_knowledge)
+        # and the variant must not be mistaken for its base
+        assert v.number == n != b.number
+
+
+def test_stopped_variants_run_the_base_design_then_stop():
+    """The whole point of stopping rather than removing: every period before the stop is
+    the base market's own, so the first uninformed period after it is that market's next
+    period with the information removed and nothing else changed. A variant that differed
+    before the stop would measure a market nobody ran."""
+    for n, base, last in STOPPED:
+        v, b = MARKETS[n], MARKETS[base]
+        assert v.sequence_info[:last] == b.sequence_info[:last]
+        assert set(v.sequence_info[last:]) == {"none"}
+        # at least three informed periods before the stop — the market has to have been
+        # traded against insiders before the first period we measure
+        assert sum(1 for c in v.sequence_info if c != "none") >= 3
+        # and the tail has to reach the indices the base market's insider periods occupy
+        ins = [p for p in range(1, b.n_periods + 1) if b.sequence_info[p - 1] == "insider"]
+        tail = [p for p in range(last + 1, v.n_periods + 1)]
+        assert len(tail) >= 3
+        assert min(tail) <= sorted(ins)[len(ins) // 2] + 1 <= max(tail) + 1
+        # no clue may survive into a period the engine now calls uninformed
+        assert all(p <= last for p in v.paper_clue_cards)
+        assert all(p <= last for p in v.public_clue_periods)
+
+
+def test_stopped_variants_predict_v_bar_in_every_uninformed_period():
+    """What the arm measures is `mean_price - re_price` in the tail, so RE and PI must both
+    be v-bar there. If they were not, the sag would be read against a moving target."""
+    for n, _, last in STOPPED:
+        v = MARKETS[n]
+        vbar = round(max(v.prior_ev.values()))
+        for p in range(last + 1, v.n_periods + 1):
+            assert v.theory_price(p) == {"RE": vbar, "PI": vbar}
+
+
+def test_market_94_is_the_validation_case_not_a_gap():
+    """Market 4 is the only published market that ends uninformed, so its period 14 is the
+    one mature no-information observation the family has. Variant 94 must reach that same
+    period, or the assumption the other three rest on — that a stopped market's sag is the
+    real market's sag — cannot be tested against anything."""
+    assert MARKETS[4].sequence_info[-1] == "none"
+    assert MARKETS[94].sequence_info[-1] == "none"
+    assert MARKETS[94].n_periods == MARKETS[4].n_periods == 14
+    # and it is the ONLY base market with that property, which is why the other three
+    # variants are measuring a gap rather than checking a number.
+    assert [n for n in PAPER_MARKETS if MARKETS[n].sequence_info[-1] == "none"] == [4]
 
 
 def test_market_6_redraw_keeps_the_information_design_and_the_prior():

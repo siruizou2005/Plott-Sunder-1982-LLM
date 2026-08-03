@@ -1,0 +1,78 @@
+# Market 93: market 3 run unchanged through period 5, then no information at all.
+# NOT one of Plott & Sunder's markets. Defined in ps1982/markets.py.
+#
+#     none 1-2 · insider 3-5 · NONE 6-12
+#
+# What it measures. Discovery divides by (re - v-bar), which on market 3's selling cell is
+# -45 francs. Market 4's period 14 -- the one mature no-information observation the
+# published family contains -- puts price 32.5 francs below v-bar over eleven sessions, a
+# correction of 0.72 to a selling-side D against the 1.08 the agents post on the conceded
+# cells of markets 2-5. Market 3 is the paper's own headline market and the one this
+# repository replicated first, so its baseline is the one most often reached for.
+#
+# Why market 3 needs this at all. Its no-information periods are 1 and 2 -- two cold
+# starts, the fewest in the family, and not one mature. There is no observation anywhere in
+# the reported sessions of where market 3's price rests, uninformed, past period 2.
+#
+# Why the information STOPS rather than being removed. A market that never had an insider
+# is a different object from one that has had insiders and then stops: if being picked off
+# makes the uninformed shade their bids, a never-informed market understates the sag and
+# the correction under-corrects, in the same direction as the effect under study. Periods
+# 1-5 here are market 3's own design, so period 6 is market 3's own period 6 with the
+# information removed and nothing else changed.
+#
+# Why the stop is at 5. Market 3's insider periods are 3-10, median 6.5, so a tail starting
+# at 6 covers them from the first measured period. Five is the earliest stop that still
+# leaves three insider periods behind it. The two full-information periods 11-12 are lost,
+# which costs this variant nothing: what it measures is the uninformed level.
+#
+# `paper_exact`, and the seed is m3_paper_0's -- see m92_stopped.yaml for why both.
+run_name: stopped/m93_stop5
+seed: 20250745
+sequence_preset: paper_exact
+market: 93
+sessions: 1
+max_rounds_per_period: 3
+# Four stopped sessions x 12 workers = 48 in flight, inside Bailian's tolerated 50-80. The
+# measured mean is 1.9 per session, so ~8 typical. W stays at 12 because the sessions this
+# baseline corrects all ran at 12; changing it here would put a throughput difference
+# between the baseline and the thing it is subtracted from. Do NOT launch this arm
+# alongside the six-session rounds arm — 10 x 12 = 120 is past the ceiling. See
+# run_proposed.sh, which runs them in separate waves for this reason.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing.
+    max_output_tokens: 8192
+    # 8192, not 512, and the number is measured. A 512 cap truncated 29% of broadcasts to
+    # an empty string; the unconstrained distribution has median 609 and p95 2,526. A cap
+    # does not save money either: a truncated call burns 1,536 tokens and returns nothing.
+    broadcast_max_output_tokens: 8192
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

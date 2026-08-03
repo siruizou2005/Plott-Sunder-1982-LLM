@@ -1,0 +1,77 @@
+# Market 8 control on a fresh seed. Identical to scenarios/m8_control.yaml except for
+# the seed; this is not a new design, it is more of the same one.
+#
+# Why more sessions. The control markets' weakest side is the SELLING side, which carries
+# only 20 periods across the six reported sessions against 33 buying periods. That shortage
+# is structural, not bad luck. Equidistance forces the prior above one half
+# (Proposition 1), the reported markets set p(X) = .6, and the selling state is the .4 one,
+# so nine insider periods yield 3.6 selling periods in expectation. Mirroring the design
+# does not help: swapping both the prior and the dividend columns relabels the states and
+# leaves the likely state on the buying side, because the same proposition drives both.
+#
+# Seed selection was considered and REJECTED. Searching seeds for a sell-heavy draw is
+# available -- m7 seeds 27, 136, 145 and m8 seeds 76, 120 each yield six or seven selling
+# periods, against a 9.9 per cent chance of drawing six or more at random -- but that is
+# choosing the sample on the variable under study. m8_control.yaml records the same
+# refusal for the original three seeds. The seeds here are the next consecutive integers,
+# taken unfiltered, and their draws are whatever they are.
+#
+# What it buys: selling periods from 20 to about 31 across the arm, taking the 95 per cent
+# interval on the control markets' selling-side discovery from +/-0.148 to +/-0.119.
+run_name: control/m8_ctrl_45
+seed: 45
+sequence_preset: random_prior
+market: 8
+sessions: 1
+max_rounds_per_period: 3
+# This arm's three sessions x 12 workers = 36 in flight, well inside Bailian's tolerated
+# 50-80; the measured mean is 1.9 per session, so ~6 typical. W stays at 12 because the 26
+# sessions of the main result all ran at 12 and this arm is read against them. See
+# bailian_paper.yaml. Do NOT launch it beside the six-session rounds arm: 9 x 12 = 108 is
+# past the ceiling. run_proposed.sh runs the three arms as separate waves.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing. Measured reasoning
+    # median 1,716 and max 6,144, so 2048 sat well inside the distribution.
+    max_output_tokens: 8192
+    # 8192, not 512, and the number is measured. `broadcast_max_output_tokens` was dead
+    # config until f27fec7/f789d04: every broadcast in every earlier run used the provider
+    # default of 8192, which is what market 3's completed sessions ran at. The first run
+    # after the cap actually reached the provider truncated 29% of broadcasts (249 of 859)
+    # to an empty string -- the model spent the whole 512 reasoning and emitted no JSON,
+    # measured as reasoning_tokens 1,536 = 3 x 512 across the call and its two repairs.
+    # The unconstrained distribution from those market-3 runs: median 609, 58% over 512,
+    # p95 2,526, p99 3,756, max 7,170. A cap here does not save money either: a truncated
+    # call burns 1,536 tokens and returns nothing, against 609 for one clean call.
+    broadcast_max_output_tokens: 8192
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    # Reasoning shares this budget. At 400 (and even at 1200) the note itself was
+    # truncated away: 6 of 12 year-end notes came back empty on the probe run.
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

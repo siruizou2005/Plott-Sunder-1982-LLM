@@ -1,7 +1,7 @@
 PY := ./.venv/bin/python
 SC := scenarios
 
-.PHONY: setup test validate gate gate6 gate7 gate8 smoke run metrics web dev-api dev-ui clean
+.PHONY: setup test validate gate gate6 gate7 gate8 gate-stopped smoke run metrics web dev-api dev-ui clean
 
 setup:
 	python3 -m venv .venv
@@ -44,6 +44,21 @@ gate8:
 	@for k in re pi zi; do \
 		echo "=== market 8, scripted $$k ==="; \
 		$(PY) -m ps1982 run --scenario $(SC)/m8_scripted_$$k.yaml 2>&1 | tail -20; \
+	done
+
+## The information-stops variants, markets 92-95. Only the PI baseline, because what is
+## new about these markets is a long uninformed tail and PI is what pins it: with nobody
+## informed the scripted price must sit at v-bar, and `mean_price - re_price` there is
+## exactly what a session of this market reports. Periods before the stop are the base
+## market's own design and are gated by the base market's scripted runs.
+##
+## Read the tail, not just the pass: scripted PI leaves about -5 francs of sag in every
+## one of these markets. That is the double auction's own floor, not behaviour, and the
+## measured -32.5 franc sag has to be read against it rather than against zero.
+gate-stopped:
+	@for n in 92 93 94 95; do \
+		echo "=== market $$n, scripted pi ==="; \
+		$(PY) -m ps1982 run --scenario $(SC)/m$${n}_scripted_pi.yaml 2>&1 | tail -22; \
 	done
 
 smoke:

@@ -1,0 +1,74 @@
+# Market 94: market 4 run unchanged through period 7, then no information at all.
+# NOT one of Plott & Sunder's markets. Defined in ps1982/markets.py.
+#
+#     none 1-4 · insider 5-7 · NONE 8-14
+#
+# THIS ONE IS THE VALIDATION CASE, not a gap. Market 4 is the only published market that
+# ends uninformed, so its period 14 is the single mature no-information observation the
+# family contains, and eleven completed sessions put it at 32.5 francs below v-bar. This
+# variant reaches that same period 14 of that same market with six uninformed periods
+# before it instead of nine insider ones. If the two agree, the assumption the other three
+# variants rest on -- that a stopped market's sag is the real market's sag -- has been
+# tested. If they disagree, the size of the disagreement is the bias in the whole arm, and
+# it is better to learn that from one 8-hour session than from a paper.
+#
+# It also measures the sag at indices 8-13, which market 4's own design cannot: its
+# no-information periods are 1-4 and 14, four cold starts and one mature.
+#
+# Why the stop is at 7. Market 4's insider periods are 5-13, median 9, so the tail must
+# cover 8 onward. Seven is the earliest stop that leaves three insider periods behind it,
+# and it puts the first measured period at 8 -- the index where the insider periods being
+# corrected actually sit.
+#
+# `paper_exact`, and the seed is m4_paper_0's -- see m92_stopped.yaml for why both. The
+# pairing matters more here than anywhere: five of the eleven sessions behind the -32.5
+# figure are that same `paper_exact` sequence.
+run_name: stopped/m94_stop7
+seed: 20250755
+sequence_preset: paper_exact
+market: 94
+sessions: 1
+max_rounds_per_period: 3
+# Four stopped sessions x 12 workers = 48 in flight, inside Bailian's tolerated 50-80. The
+# measured mean is 1.9 per session, so ~8 typical. W stays at 12 because the sessions this
+# baseline corrects all ran at 12; changing it here would put a throughput difference
+# between the baseline and the thing it is subtracted from. Do NOT launch this arm
+# alongside the six-session rounds arm — 10 x 12 = 120 is past the ceiling. See
+# run_proposed.sh, which runs them in separate waves for this reason.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value (50/50
+                                   # instead of the bingo cage's 16/40), and every
+                                   # belief-action contradiction came through that
+                                   # channel. See scenarios/market3_broadcast_fast.yaml
+    # Reasoning and the JSON share this budget. At 2048, 38% of turn calls hit it
+    # and 12% came back truncated mid-string -> unparseable -> forced no_quote,
+    # i.e. an agent that meant to trade recorded as passing.
+    max_output_tokens: 8192
+    # 8192, not 512, and the number is measured. A 512 cap truncated 29% of broadcasts to
+    # an empty string; the unconstrained distribution has median 609 and p95 2,526. A cap
+    # does not save money either: a truncated call burns 1,536 tokens and returns nothing.
+    broadcast_max_output_tokens: 8192
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    reflect_max_output_tokens: 3000
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

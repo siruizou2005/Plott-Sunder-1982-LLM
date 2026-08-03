@@ -1,0 +1,32 @@
+# Engine correctness gate for MARKET 93, market 3 with the information stopped after
+# period 5. Zero API cost.
+#
+# Prior-information baseline: agents value a certificate at their OWN expected dividend and
+# ignore what the price is telling them. In periods 6-12 nobody has anything but the
+# prior, so the price must sit at v-bar = 220 and not move. That is not a formality here
+# -- it is the null the whole arm measures a departure from. `mean_price - re_price` in the
+# tail is what a session of this market reports, and if the engine put the scripted
+# baseline anywhere but zero, every franc of measured sag would be an artefact.
+#
+# Periods 1-5 are market 3's own design and are gated by market 3's own scripted
+# runs; what is new here is a 7-period uninformed tail, which no market in the family has.
+#
+# Run on `paper_exact` and on m3_paper_0's seed -- the sequence and the draw the arm
+# actually faces. A gate that passes on a sequence nothing runs is a gate on the wrong
+# market.
+run_name: m93_scripted_pi
+seed: 20250745
+sequence_preset: paper_exact
+market: 93
+sessions: 1
+max_rounds_per_period: 3
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+agents:
+  - kind: pi

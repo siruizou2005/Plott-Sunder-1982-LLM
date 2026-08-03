@@ -55,7 +55,7 @@ cd web && npm start           # http://127.0.0.1:8100
 
 ---
 
-## The five markets, plus three controls
+## The five markets, plus three controls and four baselines
 
 The paper's five are five **treatments, not five repetitions** — roster size, prior, number of states,
 information precision and period count all differ.
@@ -70,14 +70,27 @@ information precision and period count all differ.
 | 6 | 12 | 12 | X/Y | **.6** | 1-2 none · 3-10 insider · 11-12 all | **Not the paper's.** The equidistant control: both informed-trade directions are 80 francs from the uninformed level |
 | 7 | 14 | 12 | X/Y | **.6** | market 4's | **Not the paper's.** Equidistant at ±100 **and** equal-width: a competitive price occupies 0.300 of the discovery scale on each side |
 | 8 | 14 | 12 | X/Y | **.6** | market 4's | **Not the paper's.** Market 7 with the three types' **roles separated** — one sets the uninformed level, one tops each state. 0.200 on each side |
+| 92–95 | base's | 12 | base's | base's | the base market's, **stopped** after period 8 / 5 / 7 / 6 | **Not the paper's, and not designs.** Market 2, 3, 4 or 5 run unchanged to a stated period and uninformed after it, to measure where price rests against v̄ at the indices the insider periods occupy |
+
+A third group, `STOPPED_MARKETS = (92, 93, 94, 95)`, is not a design at all. Each runs its
+base market — the units digit names it — unchanged through a stated period and then
+transmits nothing, so its uninformed tail measures where price rests against v̄ at the
+indices that market's insider periods occupy. That level is not a detail: discovery divides
+by (re − v̄), which on the published selling side is −26.7 to −45 francs, so the 32.5-franc
+sag measured at market 4's period 14 is a correction of about 1.0 to a selling-side D —
+the same size as the result it corrects. Markets 2, 3 and 5 have no mature no-information
+period at all; market 4 has one, and its variant is there to validate the design rather
+than to fill a gap. See [`docs/markets-92-95-stopped.md`](docs/markets-92-95-stopped.md).
 
 Every parameter's provenance is in [`docs/markets-1-to-5.md`](docs/markets-1-to-5.md),
-market 6's in [`docs/market-6-control.md`](docs/market-6-control.md), and markets 7 and 8's
-in [`docs/markets-7-8-equal-width.md`](docs/markets-7-8-equal-width.md).
+market 6's in [`docs/market-6-control.md`](docs/market-6-control.md), markets 7 and 8's
+in [`docs/markets-7-8-equal-width.md`](docs/markets-7-8-equal-width.md), and markets 92–95's
+in [`docs/markets-92-95-stopped.md`](docs/markets-92-95-stopped.md).
 `ps1982/markets.py` is that document as executable data, and `tests/test_markets.py` checks
 it back against the paper's Table 1, Table 2, Table 3 and footnote 5, cell by cell.
-`PAPER_MARKETS` and `CONTROL_MARKETS` keep the two provenances apart, so a guard asserting
-something Plott & Sunder did can never be satisfied by a market they never ran.
+`PAPER_MARKETS`, `CONTROL_MARKETS` and `STOPPED_MARKETS` keep the three provenances apart,
+so a guard asserting something Plott & Sunder did can never be satisfied by a market they
+never ran.
 
 ### Why three controls and not one
 
@@ -165,7 +178,15 @@ should produce its own model's outcome; if it does not, the bug is in the engine
 make gate                    # market 3, the base case
 make gate6                   # the equidistant control
 make gate7 && make gate8     # the equal-width controls, on the seeds their arm runs
+make gate-stopped            # markets 92-95, PI only — see below
 ```
+
+`gate-stopped` is worth reading rather than just passing. What is new about markets 92–95
+is a long uninformed tail, and the PI baseline says what this institution does there when
+nobody learns: **about −5 francs below v̄, not zero.** At market 4's period 14 that is −4.9
+scripted against −32.5 for the agents, so roughly 5 francs of the measured sag is the
+double auction and roughly 28 is behaviour. The floor is free and belongs in the
+denominator of any sag correction.
 
 | Agent | Y insider periods | X insider periods | E% (insider periods) | Reading |
 |---|---|---|---|---|
@@ -206,7 +227,8 @@ trying to sell and nobody bidding. Whether that is enough is what the control ar
 
 ```
 ps1982/
-  markets.py     the five markets + the control: parameters, clue model, RE/PI derivation
+  markets.py     five paper markets + three controls + four stopped baselines:
+                 parameters, clue model, RE/PI derivation
   params.py      market 3 as module-level constants, now derived from markets.py
   config.py      pydantic scenario config — every treatment variable is a flag
   book.py        the standing-quote book: validation, price improvement, crossing
@@ -216,14 +238,15 @@ ps1982/
   agents/        llm_agent.py · scripted.py (zi / pi / re baselines)
   prompts/       instructions.py (Instruction Set 2, adapted) · brief.py · schemas.py
   llm/           openai_compat.py (DeepSeek / Bailian) · gemini.py (Vertex) · base.py
-scenarios/       one YAML per experimental arm, 43 of them
+scenarios/       one YAML per experimental arm, 75 of them
 runs/            not in git — see below
 web/server/      Express + WebSocket; reads runs/, paces replay, tails live runs
   timeline.js    the only definition of a playback step: one step = one agent's TURN
 web/src/         React + ECharts + zustand; i18n.ts holds the whole 中/EN dictionary
 docs/            experiments.md · markets-1-to-5.md · market-6-control.md
-                 paper-verification.md · design-deltas.md
-tests/           550 offline tests; nothing here touches the network
+                 markets-7-8-equal-width.md · markets-92-95-stopped.md
+                 proposed-sessions.md · paper-verification.md · design-deltas.md
+tests/           746 offline tests; nothing here touches the network
 ```
 
 ### runs/ is grouped by purpose
@@ -423,6 +446,22 @@ a published experiment, and these vary something the experiment did not have:
 ./run_control_arm.sh                             # 6 sessions, ≈ $15 over 8–10 hours
 MARKETS=-m7 ./run_control_arm.sh                 # one market's three
 ```
+
+A third group of thirteen sessions is designed but **not yet run**, in three waves — six
+at six rounds per period (truncation), four on the stopped baselines (the sag benchmark),
+three more control seeds (sell-side sample). ≈ $41 over ~30 hours. One wave at a time:
+sessions × W is a structural ceiling against the endpoint, and all thirteen at once would
+put 156 requests against a tolerated 50–80.
+
+```bash
+./.venv/bin/python batch_plan.py --proposed      # all three waves
+DRY=1 ./run_proposed.sh rounds                   # print a wave, launch nothing
+./run_proposed.sh rounds                         # then stopped, then sellside
+./resume_proposed.sh rounds                      # after an interruption
+```
+
+Each arm's threat, design and measured cost is in
+[`docs/proposed-sessions.md`](docs/proposed-sessions.md).
 
 The control arm runs its seeds **unfiltered**, and the imbalance that produces is recorded
 rather than fixed: equidistance forces `p(buy) > 1/2`, so nine insider periods are

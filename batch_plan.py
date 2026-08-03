@@ -122,12 +122,62 @@ def control_arm(markets: tuple[int, ...] = CONTROL_ARM_MARKETS):
             for n in markets for s in CONTROL_ARM_SEEDS]
 
 
+# ---------------------------------------------------------------- the proposed arms
+#
+# Thirteen sessions in three waves, written for the LLM-agent paper. Each wave is one arm
+# and answers one threat; docs/proposed-sessions.md states which. They are NOT folded into
+# plan() for the same reason the control and rounds arms are not: those 26 sessions are the
+# replication of a published experiment and these are follow-ups that vary something the
+# experiment did not have.
+#
+# Seed and run_name live in the scenario files here rather than in this table, because
+# every session in these arms differs from its neighbours in a parameter (rounds, market,
+# stop period) that has to be readable in the file that sets it. This table therefore
+# carries the wave membership and nothing else, and the launcher reads names from it.
+#
+# Waves exist because of the endpoint, not the science. A session holds at most
+# `broadcast_workers` requests in flight, so sessions x W is a structural ceiling against
+# Bailian's tolerated 50-80: the rounds arm alone is 6 x 12 = 72, and all thirteen at once
+# would be 156. W stays at 12 in every file because the 26 sessions these are read against
+# all ran at 12.
+PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
+    # Truncation. Six rounds per period on the six seeds the control arm already ran, so
+    # the comparison is paired period by period. ~13h and ~$3.9 a session, measured on the
+    # market-4 rounds arm above — nearly double a 3-round session, which is why this wave
+    # is the long one.
+    "rounds": ("m7_control_r6_s42", "m7_control_r6_s43", "m7_control_r6_s44",
+               "m8_control_r6_s42", "m8_control_r6_s43", "m8_control_r6_s44"),
+    # The uninformed resting level, on the published markets' own parameters. Markets 2, 3
+    # and 5 have no mature no-information period at all; market 4 has eleven sessions of
+    # one and is here to validate the design rather than to fill a gap.
+    "stopped": ("m92_stopped", "m93_stopped", "m94_stopped", "m95_stopped"),
+    # Sell-side sample for the control arm: the next consecutive seeds, unfiltered.
+    "sellside": ("m7_control_s45", "m7_control_s46", "m8_control_s45"),
+}
+
+
+def proposed(wave: str | None = None):
+    """[(wave, scenario)] for one wave or all of them, in the order they should run."""
+    waves = [wave] if wave else list(PROPOSED_WAVES)
+    bad = [w for w in waves if w not in PROPOSED_WAVES]
+    if bad:
+        raise SystemExit(f"unknown wave {bad}; expected one of {list(PROPOSED_WAVES)}")
+    return [(w, f"scenarios/{s}.yaml") for w in waves for s in PROPOSED_WAVES[w]]
+
+
 def pending():
     """Markets specified but not yet runnable — printed so the gap is never invisible."""
     return [m for m, (impl, _, _) in sorted(MARKETS.items()) if not impl]
 
 
 if __name__ == "__main__":
+    if "--proposed" in sys.argv:
+        # `--proposed [wave]` — one `wave<TAB>scenario` line per session. run_name and seed
+        # come from the scenario file, so the launcher passes neither.
+        rest = [a for a in sys.argv[1:] if not a.startswith("-")]
+        for w, sc in proposed(rest[0] if rest else None):
+            print(f"{w}\t{sc}")
+        sys.exit(0)
     if "--rounds-arm" in sys.argv:
         for name, sc, seed, r in rounds_arm():
             print(f"{name}\t{sc}\t{seed}\t{r}")
