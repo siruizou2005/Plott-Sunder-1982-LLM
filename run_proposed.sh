@@ -47,11 +47,34 @@ while IFS= read -r line; do ROWS="$ROWS$line"$'\n'; done \
 # A wave already in flight is the one thing that breaks the ceiling, so refuse rather than
 # add to it. Match the launched command line, not a bare pattern: `pgrep -f ps1982` also
 # matches this script and the check itself.
+#
+# FORCE=1 overrides, and there is a real case for it. The provider client retries transient
+# rejections -- 429 and the 408/409/5xx family, plus the SDK's rate-limit, timeout and
+# connection errors -- with exponential backoff and FULL JITTER (`llm/base.py:_jittered`,
+# base 2.0, 5 attempts, windows sampled uniformly over 2/4/8/16/32s), on top of a 0.25s
+# pace before every request. That turns overload into latency instead of failure, which is
+# what makes running all three waves at once viable at all.
+#
+# What it does NOT do is raise the endpoint's capacity. Past five retries the call returns
+# `api_error: true`, and that is CONTAMINATION rather than model behaviour: the model never
+# answered, so the skipped turn was not the agent's choice. Vertex has done exactly this
+# here -- 54 retries in 75 calls and 5 corrupted turns at W=12. So when forcing, watch the
+# retry counts rather than only the error counts:
+#
+#   grep -o '"retries":[0-9]*' runs/<group>/<run>/*.jsonl | sort | uniq -c
+#
+# and pull a wave if they climb. The default stays refuse, because the ceiling arithmetic
+# in the scenario files is only true one wave at a time.
+FORCE=${FORCE:-0}
 running=$(ps -eo args= | grep -c '^[^ ]*\.venv/bin/python -m ps1982 run' || true)
-if [ "$running" -gt 0 ] && [ "$DRY" = "0" ]; then
+if [ "$running" -gt 0 ] && [ "$DRY" = "0" ] && [ "$FORCE" = "0" ]; then
   echo "REFUSING: $running ps1982 session(s) already running." >&2
   echo "  ps -eo pid,stat,args | grep '[p]s1982 run'" >&2
+  echo "  FORCE=1 to add this wave anyway — see the comment in this script first." >&2
   exit 1
+fi
+if [ "$running" -gt 0 ] && [ "$FORCE" != "0" ]; then
+  echo "FORCED: adding this wave to $running session(s) already running." >&2
 fi
 
 WANT=" $* "
