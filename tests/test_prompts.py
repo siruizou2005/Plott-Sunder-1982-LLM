@@ -14,10 +14,11 @@ subjects could not deduce that dividends stay constant. A guard that only ever s
 from __future__ import annotations
 
 import itertools
+import re
 
 import pytest
 
-from ps1982.config import Rules
+from ps1982.config import Config, Rules
 from ps1982.markets import MARKETS
 from ps1982.params import SEAT_NAMES, SEATS, SEAT_TYPE
 from ps1982.prompts import (build_brief, build_broadcast_brief, broadcast_system_prompt,
@@ -53,7 +54,7 @@ def _all_prompts(market, seat):
     once before."""
     return "\n".join([system_prompt(seat, RULES, market),
                        broadcast_system_prompt(seat, RULES, market),
-                       reflect_system_prompt(seat, market)])
+                       reflect_system_prompt(seat, RULES, market)])
 
 
 # ---------------------------------------------------------------- forbidden language
@@ -418,7 +419,7 @@ def test_reflect_prompt_carries_the_mechanism(seat):
     """A note is durable memory, so an agent writing one needs the same market knowledge
     it decides with. Without the bingo cage block it can only assume 50/50 — measured on
     the probe run, which is how this was found."""
-    text = reflect_system_prompt(seat, M3, NAMES[seat])
+    text = reflect_system_prompt(seat, RULES, M3, NAMES[seat])
     assert "40 balls numbered 1 through 40" in text
     assert "is numbered 1 through 16" in text and "is numbered 17 through 40" in text
     mine = M3.dividends[SEAT_TYPE[seat]]
@@ -428,3 +429,106 @@ def test_reflect_prompt_carries_the_mechanism(seat):
     lowered = text.lower()
     for word in ("probability", "expected value", "equilibrium"):
         assert word not in lowered
+
+
+# ---------------------------------------------------------------- structural disclosure
+#
+# Rules.disclose_structure is the one deliberate exception to the "nothing about types,
+# others' dividends or the informed count" constraint. These guards hold the exception to
+# exactly its charter: structure in, identities / fixedness / schedule / vocabulary out.
+
+DISC = Rules(disclose_structure=True)
+DISC_MARKETS = [MARKETS[4], MARKETS[7], MARKETS[8]]
+DISC_SEATS = [(m, s) for m in DISC_MARKETS for s in m.seats]
+DISC_HEADER = "== THE THREE TYPES OF INVESTORS =="
+
+
+def _all_prompts_disclosed(market, seat):
+    return "\n".join([system_prompt(seat, DISC, market),
+                      broadcast_system_prompt(seat, DISC, market),
+                      reflect_system_prompt(seat, DISC, market)])
+
+
+def test_disclosure_is_a_treatment_switch():
+    """On: the section is in all three prompts. Off: in none of them, and the baseline
+    privacy sentence is byte-exactly the one the completed runs were prompted with."""
+    m = MARKETS[4]
+    for build in (system_prompt, broadcast_system_prompt, reflect_system_prompt):
+        assert DISC_HEADER in build("S05", DISC, m)
+        assert DISC_HEADER not in build("S05", RULES, m)
+    off = system_prompt("S05", RULES, m)
+    assert "Type I" not in off
+    assert ("These numbers are YOUR earnings per certificate. They are your own private "
+            "information;\ndo not reveal them to anyone. Earnings may be different for "
+            "different investors.") in off
+
+
+@pytest.mark.parametrize("market,seat", DISC_SEATS, ids=_ids(DISC_SEATS))
+def test_disclosed_prompts_keep_forbidden_vocabulary_out(market, seat):
+    """The treatment discloses structure, not vocabulary: probability language, theory
+    words and the prior-as-a-number stay out of the disclosed prompts too."""
+    text = _all_prompts_disclosed(market, seat)
+    lowered = text.lower()
+    for word in ("probability", "probabilities", "probable", "likelihood",
+                 "expected value", "bayes", "chance", "odds", "random sample",
+                 "rational expectation", "equilibrium", "prior information model",
+                 "insider", "efficiency"):
+        assert word not in lowered, f"market {market.number} {seat} contains {word!r}"
+    for token in ("0.4", "0.6", "40%", "60%", "16/40", "24/40"):
+        assert token not in text, f"market {market.number} states the prior as {token!r}"
+
+
+@pytest.mark.parametrize("market,seat", DISC_SEATS, ids=_ids(DISC_SEATS))
+def test_disclosed_prompt_carries_every_types_dividends_and_your_own(market, seat):
+    """The mirror of test_only_your_own_dividends_appear: under disclosure every type's
+    amounts are in the prompt, and the agent is told which type is its own — and only
+    that one."""
+    text = system_prompt(seat, DISC, market)
+    for t, d in market.dividends.items():
+        for v in d.values():
+            assert f"{v} francs per certificate" in text, \
+                f"market {market.number} {seat} misses type {t}'s {v}"
+    assert f"You are a Type {market.seat_type[seat]} investor" in text
+    for t in market.dividends:
+        if t != market.seat_type[seat]:
+            assert f"You are a Type {t} investor" not in text
+
+
+@pytest.mark.parametrize("market", DISC_MARKETS, ids=lambda m: f"m{m.number}")
+def test_disclosed_section_states_allocation_not_identity_or_schedule(market):
+    """The section names counts and amounts, never who or when. The only digits it may
+    contain are the dividend values themselves, so a leaked period number, seat id or
+    schedule shows up as a failing integer — and the fixedness of the card holders is
+    deliberately NOT stated, in either direction."""
+    text = system_prompt(market.seats[0], DISC, market)
+    section = text[text.index(DISC_HEADER):text.index("== WHAT EVERY INVESTOR KNOWS ==")]
+    values = {str(v) for d in market.dividends.values() for v in d.values()}
+    assert set(re.findall(r"\d+", section)) == values
+    assert "exactly two of" in section
+    assert "or whether they are the same investors" in section
+    assert "a blank card looks the same" in section
+    assert "the SAME two" not in section
+    for s in market.seats:
+        assert s not in section
+
+
+def test_disclosed_fact_one_replaces_the_baseline_fact():
+    """The baseline fact — no one is told how many — would contradict the disclosure
+    section outright, so under the treatment it points at the section instead."""
+    on = system_prompt("S01", DISC, MARKETS[4])
+    off = system_prompt("S01", RULES, MARKETS[4])
+    assert "No one is told how many investors receive" not in on
+    assert "is stated in the section above" in on
+    assert "No one is told how many investors receive" in off
+    assert "is stated in the section above" not in off
+
+
+@pytest.mark.parametrize("number", [1, 2, 3, 6, 92])
+def test_disclosure_rejects_markets_with_all_periods(number):
+    """A market with 'all' periods hands a lettered card to everybody in those periods,
+    which would make the disclosed two-per-type sentence false. Config refuses the
+    combination rather than prompting agents with a lie."""
+    with pytest.raises(ValueError, match="disclose_structure"):
+        Config(market=number, rules={"disclose_structure": True})
+    Config(market=number)                                    # baseline still loads
+    Config(market=4, rules={"disclose_structure": True})     # the treatment markets do too

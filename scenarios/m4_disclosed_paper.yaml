@@ -1,0 +1,65 @@
+# Market 4 with the structure disclosed. Identical to the m4_paper_0 session -- same
+# market, same seed, same paper sequence, same model, same three thinking budgets, same
+# W=12, same rules -- except for the one flag below, because this arm asks one question
+# and must vary one thing to ask it.
+#
+# The question is what the common-knowledge deficit costs. Plott & Sunder's subjects sat
+# in one room: they could see twelve people, guess that the experimenter's envelopes
+# followed a scheme, and accumulate across sessions a sense of the design's shape. An LLM
+# agent gets none of that -- the baseline prompt names its own two dividend amounts and
+# nothing else, so "who could know more than me" is unbounded. This session writes the
+# STRUCTURE into every agent's system prompt: the full three-type dividend table with the
+# agent's own type named, four investors per type, and that in a card year exactly two of
+# each type's four hold a lettered card. Identities, whether the two stay the same across
+# years, and which years are card years all stay hidden, and no-information periods are
+# still not announced (announce_no_info_period stays unset).
+#
+# Run on m4_paper_0's seed and sequence, so this session faces the same market, the same
+# turn order and the same name mapping, and the prompt disclosure is the only difference.
+# The comparison is PAIRED period by period against runs/m4/m4_paper_0.
+run_name: disclosed/m4_disc_paper
+seed: 20250755
+sequence_preset: paper_exact
+market: 4
+sessions: 1
+max_rounds_per_period: 3
+# This arm's three sessions x 12 workers = 36 in flight, inside Bailian's tolerated
+# 50-80, so the wave runs as one batch. W stays at 12 because every session this arm is
+# read against ran at 12.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+  # THE one thing this arm varies. The full three-type dividend table, the agent's own
+  # type, and the two-per-type card allocation go into every system prompt; identities,
+  # fixedness and the schedule stay hidden. pydantic drops unknown keys silently, so a
+  # typo here would run the baseline under this run_name -- tests/test_scenarios.py
+  # asserts the flag actually loads from this file.
+  disclose_structure: true
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value; see
+                                   # scenarios/market3_broadcast_fast.yaml
+    max_output_tokens: 8192        # reasoning and the JSON share this budget; at 2048,
+                                   # 12% of turn calls truncated mid-string
+    broadcast_max_output_tokens: 8192  # 512 truncated 29% of broadcasts to nothing;
+                                       # see scenarios/m7_control_r6_s42.yaml
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    reflect_max_output_tokens: 3000 # at 400 and 1200 the note itself truncated away
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

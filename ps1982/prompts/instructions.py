@@ -9,7 +9,10 @@ Three hard constraints, all taken from the paper or the design doc:
    two boxes of chips rather than as a likelihood.
 2. Nothing is said about how many investor types exist, what anyone else's dividends are,
    whether the informed agents stay the same across periods, or how likely either state
-   is (design doc §3.3).
+   is (design doc §3.3). This describes the BASELINE: `Rules.disclose_structure` is the
+   one deliberate, flag-gated treatment exception, and it discloses the type structure
+   and the per-type informed count — never identities, never the schedule of card years,
+   and never whether the card holders stay the same across years.
 3. The common-knowledge facts of design doc §3.2 ARE stated explicitly, because subjects
    could deduce them from the physical setup and our agents cannot. Which facts qualify
    is per-market: market 1's subjects could NOT deduce that dividends stay constant
@@ -56,8 +59,7 @@ amounts below. Which one is paid is determined by the mechanism described furthe
 
 {dividend_lines}
 
-These numbers are YOUR earnings per certificate. They are your own private information;
-do not reveal them to anyone. Earnings may be different for different investors.
+{privacy}
 
 At the start of every year you are given an initial holding of {certs} certificates and
 {cash:,} francs on hand. You may sell your certificates or hold them; you may keep your
@@ -71,6 +73,18 @@ At the end of each year:
 Whatever remains is your profit for that year, and it is yours to keep. Your profits
 accumulate across years.\
 """
+
+# The two fillings of _EARNINGS's {privacy} slot. _EARNINGS_PRIVATE is the baseline and
+# must stay byte-identical to the pre-slot wording — the completed runs were prompted
+# with exactly these sentences, and prefix caching keys on the bytes.
+_EARNINGS_PRIVATE = """\
+These numbers are YOUR earnings per certificate. They are your own private information;
+do not reveal them to anyone. Earnings may be different for different investors."""
+
+_EARNINGS_DISCLOSED = """\
+These numbers are YOUR earnings per certificate. Every investor knows the {n_types} sets
+of amounts that exist in this market — they are listed further down — but which set is
+YOURS is your own private information; do not reveal it to anyone."""
 
 _MECHANISM_HEAD = """\
 == HOW THE DIVIDEND IS DETERMINED ==
@@ -118,6 +132,35 @@ marks. What differs is how often: 1s come out of box Y more often than out of bo
 row with many 1s is more in keeping with box Y and a row with few 1s with box X.\
 """
 
+# The structural-disclosure treatment (Rules.disclose_structure). What goes in: the full
+# per-type dividend table, the agent's own type, and the two-per-type card allocation.
+# What stays out: identities, whether the card holders are the same investors across
+# years, and which years are card years — the closing sentence keeps a blank card
+# ambiguous between "I am one of the uninformed" and "no one holds a letter this year".
+# Wording stays inside the instruction vocabulary: no probability language, the prior
+# never as a number, "clue card that is not blank" rather than any theory term, and the
+# only digits are the dividend values themselves.
+_DISCLOSURE = """\
+== THE {n_types_upper} TYPES OF INVESTORS ==
+
+The facts in this section are known to all {n_word} investors in this market.
+
+There are {n_types} types of investors, with {per_type} investors of each type. Investors
+of the same type have the same earnings per certificate; investors of different types
+have different earnings. The {n_types} types earn:
+
+{type_lines}
+
+You are a Type {own} investor. No one is told which type any OTHER investor is.
+
+In a year in which clue cards that are not blank are handed out, exactly {informed} of
+the {per_type} investors of each type receive such a card; the other {uninformed} receive
+blanks. No one is told which investors they are, or whether they are the same investors
+from year to year. There may also be years in which every investor's card is blank, and
+no one is told which years are which: a blank card looks the same to its holder either
+way.\
+"""
+
 _COMMON_KNOWLEDGE = """\
 == WHAT EVERY INVESTOR KNOWS ==
 
@@ -128,6 +171,13 @@ The following {n_facts} things are known to all {n_word} investors:
 _FACT_HOW_MANY = """\
   1. No one is told how many investors receive a clue card that is not blank, or which
      investors they are."""
+# The disclosed variant of fact 1. The baseline sentence would contradict the disclosure
+# section outright, so under the treatment the fact points at the section instead — and
+# restates the one thing that is still never revealed.
+_FACT_HOW_MANY_DISCLOSED = """\
+  1. How many investors receive a clue card that is not blank, in a year when such cards
+     are handed out, is stated in the section above. WHICH investors they are is never
+     revealed to anyone."""
 _FACT_SAME_CARD = """\
   2. Every clue card that is not blank, handed out in a given year, carries the SAME
      content."""
@@ -270,8 +320,31 @@ def _mechanism(market: Market) -> str:
     return f"{head}\n\n{clue}"
 
 
-def _common_knowledge(market: Market) -> str:
-    facts = [_FACT_HOW_MANY, _FACT_SAME_CARD]
+def _disclosure(market: Market, seat: str) -> str:
+    """The structural-disclosure section. Every number is derived from the Market —
+    type count, per-type roster, informed count, the dividend table — so the section is
+    correct for any market Config._check lets it run on."""
+    width = max(len(s) for s in market.states)
+    blocks = []
+    for t, d in market.dividends.items():
+        rows = "\n".join(
+            f"        If the {s:<{width}s}-dividend is paid:  {d[s]} francs per certificate"
+            for s in market.states)
+        blocks.append(f"    Type {t}:\n{rows}")
+    n_types = _word(len(market.dividends))
+    return _DISCLOSURE.format(
+        n_types_upper=n_types.upper(),
+        n_types=n_types,
+        n_word=_word(market.n_agents),
+        per_type=_word(market.n_per_type),
+        informed=_word(market.insiders_per_type),
+        uninformed=_word(market.n_per_type - market.insiders_per_type),
+        own=market.seat_type[seat],
+        type_lines="\n".join(blocks))
+
+
+def _common_knowledge(market: Market, disclose: bool) -> str:
+    facts = [_FACT_HOW_MANY_DISCLOSED if disclose else _FACT_HOW_MANY, _FACT_SAME_CARD]
     # "agents could deduce in ALL BUT MARKET 1 that the dividend values for every agent
     # remained constant from period to period" — so market 1 must not be told.
     if market.dividends_constant_is_common_knowledge:
@@ -281,7 +354,7 @@ def _common_knowledge(market: Market) -> str:
                                     fact_lines="\n".join(facts))
 
 
-def _preamble(market: Market, seat: str, name: str | None) -> list[str]:
+def _preamble(market: Market, seat: str, name: str | None, disclose: bool) -> list[str]:
     """The market knowledge every prompt shares: who you are, what you earn, how it is
     decided, and what everyone knows. Identical across turn, broadcast and reflection —
     a reflection that lacked the mechanism block once left 50/50 as the only inference
@@ -290,14 +363,23 @@ def _preamble(market: Market, seat: str, name: str | None) -> list[str]:
     width = max(len(s) for s in market.states)
     lines = "\n".join(f"    If the {s:<{width}s}-dividend is paid:  {d[s]} francs per certificate"
                       for s in market.states)
-    return [
+    privacy = (_EARNINGS_DISCLOSED.format(n_types=_word(len(market.dividends)))
+               if disclose else _EARNINGS_PRIVATE)
+    parts = [
         _GENERAL.format(n_word=_word(market.n_agents), n_periods=market.n_periods,
                         seat=name or seat, franc_to_usd=market.franc_to_usd),
         _EARNINGS.format(n_word=_word(len(market.states)), dividend_lines=lines,
+                         privacy=privacy,
                          certs=INITIAL_CERTS, cash=INITIAL_CASH, fixed_cost=FIXED_COST),
         _mechanism(market),
-        _common_knowledge(market),
     ]
+    # After the mechanism: the section leans on the clue-card vocabulary defined there,
+    # and both _EARNINGS_DISCLOSED ("further down") and _FACT_HOW_MANY_DISCLOSED ("the
+    # section above") encode this ordering.
+    if disclose:
+        parts.append(_disclosure(market, seat))
+    parts.append(_common_knowledge(market, disclose))
+    return parts
 
 
 def system_prompt(seat: str, rules: Rules, market: Market, name: str | None = None) -> str:
@@ -305,7 +387,7 @@ def system_prompt(seat: str, rules: Rules, market: Market, name: str | None = No
     # dividend row. S01..S12 must not reach the model — the numbering encodes the type
     # blocks and the insider positions.
     schema = ", ".join(f'"{s}": <number between 0 and 1>' for s in market.states)
-    parts = _preamble(market, seat, name) + [
+    parts = _preamble(market, seat, name, rules.disclose_structure) + [
         _TRADING.format(improvement_rule=(_IMPROVEMENT_ON if rules.price_improvement
                                           else _IMPROVEMENT_OFF)),
         _TURN_TASK,
@@ -337,7 +419,7 @@ Reply with a single json object and nothing else:
 def broadcast_system_prompt(seat: str, rules: Rules, market: Market,
                             name: str | None = None) -> str:
     """Same market knowledge, different task: answer one quote, right now."""
-    parts = _preamble(market, seat, name) + [
+    parts = _preamble(market, seat, name, rules.disclose_structure) + [
         _TRADING.format(improvement_rule=(_IMPROVEMENT_ON if rules.price_improvement
                                           else _IMPROVEMENT_OFF)),
         "== WHAT YOU DO NOW ==\n\n"
@@ -361,7 +443,8 @@ Reply with the note text only — no json, no headings, no preamble.\
 """
 
 
-def reflect_system_prompt(seat: str, market: Market, name: str | None = None) -> str:
+def reflect_system_prompt(seat: str, rules: Rules, market: Market,
+                          name: str | None = None) -> str:
     """The same market knowledge as a turn, with the task swapped for note-writing.
 
     This prompt used to state only the dividend amounts. It never described the bingo
@@ -372,4 +455,5 @@ def reflect_system_prompt(seat: str, market: Market, name: str | None = None) ->
     spending 171 reasoning tokens doing it. The missing block was the cause, not the
     missing reasoning.
     """
-    return "\n\n".join(_preamble(market, seat, name) + [_REFLECT_TASK])
+    return "\n\n".join(_preamble(market, seat, name, rules.disclose_structure)
+                       + [_REFLECT_TASK])

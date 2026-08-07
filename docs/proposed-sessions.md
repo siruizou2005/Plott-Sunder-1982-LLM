@@ -1,19 +1,19 @@
-# Thirteen proposed sessions
+# Sixteen proposed sessions
 
 Written for the LLM-agent paper (`19-Analysis/paper-llm`). Nothing here has been run. Each
 arm is justified by a specific threat to a specific claim in that manuscript; the numbers
 below were computed from the reported sessions, not estimated.
 
-Three waves, one arm each, run **one wave at a time**. A session holds at most
+Four waves, one arm each, run **one wave at a time**. A session holds at most
 `broadcast_workers` requests in flight, so sessions × W is a structural ceiling against
-Bailian's tolerated 50–80: the waves are 72, 48 and 36, and all thirteen at once would be
-156. W stays at 12 in every file because the 26 sessions these arms are read against all
-ran at 12.
+Bailian's tolerated 50–80: the waves are 72, 48, 36 and 36, and all sixteen at once would
+be 192. W stays at 12 in every file because the 26 sessions these arms are read against
+all ran at 12.
 
 ```
 make gate-stopped                            # free: the engine gate on the new markets
 DRY=1 ./run_proposed.sh rounds               # print the wave, launch nothing
-./run_proposed.sh rounds                     # then stopped, then sellside
+./run_proposed.sh rounds                     # then stopped, then sellside, then disclosed
 ./resume_proposed.sh rounds                  # after an interruption
 ```
 
@@ -22,7 +22,8 @@ DRY=1 ./run_proposed.sh rounds               # print the wave, launch nothing
 | `rounds` | 6 | ~13–15 h | ~$23 | truncation |
 | `stopped` | 4 | ~7–8 h | ~$10 | the sag benchmark |
 | `sellside` | 3 | ~8 h | ~$7.5 | sell-side sample |
-| | **13** | **~30 h** | **~$41** | |
+| `disclosed` | 3 | ~8 h | ~$7.5 | the common-knowledge deficit |
+| | **16** | **~38 h** | **~$48** | |
 
 Costs are measured, not projected: the market-4 rounds arm ran six sessions at 4, 5 and 6
 rounds and recorded $3.77–$4.04 and 13.0–13.2 h for the 6-round pair, against ~$2.47 and
@@ -135,6 +136,27 @@ no-information observation at period 14, taking markets 7–8's mature sample fr
 to 9 and its interval from about ±6.6 to ±5.4 francs — which on their ±100 denominators is
 ±0.05 of D on both sides. The equidistant design is why Arm 2 does not need to touch
 markets 7 and 8 at all.
+
+## Arm 4 — structural disclosure (3 sessions, wave `disclosed`)
+
+```
+scenarios/m4_disclosed_paper.yaml    scenarios/m7_disclosed_s42.yaml    scenarios/m8_disclosed_s42.yaml
+```
+
+**Threat.** The common-knowledge deficit. Plott & Sunder's subjects sat in one room and
+could deduce structure the instructions never stated; the baseline LLM agent knows its own
+two dividend amounts and nothing else, so any shortfall against the paper may be starved
+common knowledge rather than failed aggregation.
+
+**Design.** `Rules.disclose_structure` writes the structure into every system prompt: the
+full three-type dividend table with the agent's own type named, four investors per type,
+and that in a card year exactly two of each type's four hold a lettered card. Identities,
+whether the holders stay the same across years, and which years are card years stay
+hidden; `announce_no_info_period` stays unset. Each session runs on the seed of a
+completed baseline — `m4_paper_0` (20250755, `paper_exact`), `m7_ctrl_42` and `m8_ctrl_42`
+(`random_prior` redraws the same sequence from the same seed) — so the comparison is
+paired period by period and the prompt is the only difference. Full design and wording
+constraints: `docs/disclosure-treatment.md`.
 
 ## Reading the results
 

@@ -41,6 +41,19 @@ class Rules(BaseModel):
     # market against its own design as a treatment.
     announce_no_info_period: bool | None = None
 
+    # Structural disclosure. FALSE is the faithful baseline: Table 1 records the common
+    # knowledge about informed agents as "How Many: No", and design doc §3.3 keeps the
+    # number of types, others' dividends and the informed count out of every prompt. True
+    # writes the STRUCTURE in: the full per-type dividend table with the agent's own type
+    # named, four investors per type, and that in a year when clue cards that are not
+    # blank are handed out, exactly two of each type's four hold one. Identities, whether
+    # the two stay the same across years, and the schedule of card years all stay hidden,
+    # and the wording keeps the bingo-cage vocabulary (no probability language, the prior
+    # only ever as balls). Only defined for markets whose information design never deals
+    # cards to everyone — an 'all' period would make the two-per-type sentence false, and
+    # Config._check rejects the combination.
+    disclose_structure: bool = False
+
     # Elicit posterior / reservation prices / basis each turn. Off = the reactivity control
     # (design doc §6 ②): belief elicitation may itself change behaviour.
     elicit_beliefs: bool = True
@@ -169,6 +182,15 @@ class Config(BaseModel):
         for a in self.agents:
             if a.kind not in ("llm", "zi", "pi", "re", "inv"):
                 raise ValueError(f"unknown agent kind {a.kind!r}")
+        # The disclosure text states that lettered cards go to two investors per type.
+        # A market with 'all' periods hands one to everybody in those periods, which
+        # would make the stated structure false. Rejecting the combination is better
+        # than prompting agents with a lie.
+        if self.rules.disclose_structure and "all" in self.market_spec.sequence_info:
+            raise ValueError(
+                f"disclose_structure states that lettered clue cards go to two investors "
+                f"per type; market {self.market} has 'all' periods where every investor "
+                f"receives one, so the disclosure text would be false")
         return self
 
     @property

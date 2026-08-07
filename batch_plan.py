@@ -124,7 +124,7 @@ def control_arm(markets: tuple[int, ...] = CONTROL_ARM_MARKETS):
 
 # ---------------------------------------------------------------- the proposed arms
 #
-# Thirteen sessions in three waves, written for the LLM-agent paper. Each wave is one arm
+# Sixteen sessions in four waves, written for the LLM-agent paper. Each wave is one arm
 # and answers one threat; docs/proposed-sessions.md states which. They are NOT folded into
 # plan() for the same reason the control and rounds arms are not: those 26 sessions are the
 # replication of a published experiment and these are follow-ups that vary something the
@@ -153,6 +153,12 @@ PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
     "stopped": ("m92_stopped", "m93_stopped", "m94_stopped", "m95_stopped"),
     # Sell-side sample for the control arm: the next consecutive seeds, unfiltered.
     "sellside": ("m7_control_s45", "m7_control_s46", "m8_control_s45"),
+    # Structural disclosure (Rules.disclose_structure). Three sessions, each on the seed
+    # of a completed baseline — m4_paper_0 (20250755, paper_exact), m7_ctrl_42 and
+    # m8_ctrl_42 (random_prior) — so each pair faces the same drawn market and the prompt
+    # disclosure is the only difference. 3 x 12 = 36 in flight; one wave.
+    # docs/disclosure-treatment.md.
+    "disclosed": ("m4_disclosed_paper", "m7_disclosed_s42", "m8_disclosed_s42"),
 }
 
 

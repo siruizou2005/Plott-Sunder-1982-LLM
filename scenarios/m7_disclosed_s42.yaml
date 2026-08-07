@@ -1,0 +1,62 @@
+# Market 7 with the structure disclosed. Identical to the m7_ctrl_42 session -- same
+# market, same seed, same drawn sequence, same model, same three thinking budgets, same
+# W=12, same rules -- except for the one flag below. The design question is stated in
+# scenarios/m4_disclosed_paper.yaml; this file adds market 7's stake in it.
+#
+# Market 7 is where the free-rider identity bites hardest: v-bar is the LARGEST
+# uninformed valuation by construction, so no uninformed agent can push the buy-side
+# price toward RE without learning, and the equal-width design leaves no free riders on
+# either side. The baseline agent does not know any of that structure. A disclosed agent
+# knows the three tables and that exactly two of its own type hold a lettered card in a
+# card year -- enough to reason "if the price sits above every uninformed valuation,
+# someone with a letter is buying", which is precisely the price-based inference the
+# scripted-RE rule needs and the baseline sell side never triggered. Whether disclosure
+# alone closes any of the buy/sell gap (-0.337 measured on this market's LLM baseline
+# against +0.297 on market 3) is the measurement.
+#
+# Run on m7_ctrl_42's seed: Market.redrawn keys the sequence RNG on
+# "ps1982-m7-seq-42", so this session draws the same fourteen states the baseline drew
+# (XXXXYXYXYYXXXX) and the comparison is PAIRED period by period against
+# runs/control/m7_ctrl_42. The scripted pi/re/zi baselines on this market also ran on
+# seed 42.
+run_name: disclosed/m7_disc_42
+seed: 42
+sequence_preset: random_prior
+market: 7
+sessions: 1
+max_rounds_per_period: 3
+# Three sessions x 12 workers = 36 in flight, inside Bailian's tolerated 50-80; one wave.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+  # THE one thing this arm varies; see m4_disclosed_paper.yaml. tests/test_scenarios.py
+  # asserts the flag actually loads from this file.
+  disclose_structure: true
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value; see
+                                   # scenarios/market3_broadcast_fast.yaml
+    max_output_tokens: 8192        # reasoning and the JSON share this budget; at 2048,
+                                   # 12% of turn calls truncated mid-string
+    broadcast_max_output_tokens: 8192  # 512 truncated 29% of broadcasts to nothing;
+                                       # see scenarios/m7_control_r6_s42.yaml
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    reflect_max_output_tokens: 3000 # at 400 and 1200 the note itself truncated away
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817

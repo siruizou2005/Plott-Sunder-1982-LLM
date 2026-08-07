@@ -62,7 +62,7 @@ class LLMAgent(Agent):
         # Built once; identical bytes on every call for this seat.
         self.system = system_prompt(seat, rules, market, name)
         self.broadcast_system = broadcast_system_prompt(seat, rules, market, name)
-        self.reflect_system = reflect_system_prompt(seat, market, name)
+        self.reflect_system = reflect_system_prompt(seat, rules, market, name)
         self._schema_kind = "turn" if rules.elicit_beliefs else "turn_no_beliefs"
 
     # ------------------------------------------------------------------ turn

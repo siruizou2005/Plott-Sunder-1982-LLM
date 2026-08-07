@@ -118,7 +118,9 @@ Guarded for every (market, seat) pair in `tests/test_prompts.py`:
    mechanism, so the replication does too.
 2. **Nothing is disclosed** about how many types exist, what others' dividends are, whether
    insiders are the same people each period, or how likely a state is. Market size is stated;
-   type structure is not.
+   type structure is not. This is the baseline: `Rules.disclose_structure` is the one
+   deliberate, flag-gated treatment exception (`docs/disclosure-treatment.md`), and even it
+   never discloses identities, fixedness or the schedule of card years.
 3. **Common knowledge is per-market.** The paper notes subjects could deduce "in all but
    market 1" that dividends stay constant across periods, so market 1's agents are not told.
 

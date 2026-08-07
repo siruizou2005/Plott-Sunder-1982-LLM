@@ -447,16 +447,17 @@ a published experiment, and these vary something the experiment did not have:
 MARKETS=-m7 ./run_control_arm.sh                 # one market's three
 ```
 
-A third group of thirteen sessions is designed but **not yet run**, in three waves — six
+A third group of sixteen sessions is designed but **not yet run**, in four waves — six
 at six rounds per period (truncation), four on the stopped baselines (the sag benchmark),
-three more control seeds (sell-side sample). ≈ $41 over ~30 hours. One wave at a time:
-sessions × W is a structural ceiling against the endpoint, and all thirteen at once would
-put 156 requests against a tolerated 50–80.
+three more control seeds (sell-side sample), and three with the type structure disclosed
+in every prompt (the common-knowledge deficit). ≈ $48 over ~38 hours. One wave at a time:
+sessions × W is a structural ceiling against the endpoint, and all sixteen at once would
+put 192 requests against a tolerated 50–80.
 
 ```bash
-./.venv/bin/python batch_plan.py --proposed      # all three waves
+./.venv/bin/python batch_plan.py --proposed      # all four waves
 DRY=1 ./run_proposed.sh rounds                   # print a wave, launch nothing
-./run_proposed.sh rounds                         # then stopped, then sellside
+./run_proposed.sh rounds                         # then stopped, sellside, disclosed
 ./resume_proposed.sh rounds                      # after an interruption
 ```
 
