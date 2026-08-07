@@ -6,7 +6,9 @@ and the numbers computed from those logs.
 Related files, which this one does not duplicate: `docs/markets-1-to-5.md` records where each
 market *parameter* was read off the paper and the two places the paper's table and body text
 disagree; `docs/paper-verification.md` checks market 3 against the paper line by line;
-`docs/design-deltas.md` argues each deliberate departure from the 1982 procedure.
+`docs/design-deltas.md` argues each deliberate departure from the 1982 procedure;
+`docs/agent-reasoning.md` reads the elicited beliefs and the written text, which is where the
+uninformed side of the asymmetry below is accounted for.
 
 All numbers below were recomputed from the logs with the current code, not transcribed from
 an earlier report. Where a number here disagrees with an older note, this one is current.

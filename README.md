@@ -243,9 +243,10 @@ runs/            not in git — see below
 web/server/      Express + WebSocket; reads runs/, paces replay, tails live runs
   timeline.js    the only definition of a playback step: one step = one agent's TURN
 web/src/         React + ECharts + zustand; i18n.ts holds the whole 中/EN dictionary
-docs/            experiments.md · markets-1-to-5.md · market-6-control.md
-                 markets-7-8-equal-width.md · markets-92-95-stopped.md
-                 proposed-sessions.md · paper-verification.md · design-deltas.md
+docs/            experiments.md · agent-reasoning.md · markets-1-to-5.md
+                 market-6-control.md · markets-7-8-equal-width.md
+                 markets-92-95-stopped.md · proposed-sessions.md
+                 paper-verification.md · design-deltas.md
 tests/           746 offline tests; nothing here touches the network
 ```
 
