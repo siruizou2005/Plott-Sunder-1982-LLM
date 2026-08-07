@@ -158,6 +158,12 @@ completed baseline — `m4_paper_0` (20250755, `paper_exact`), `m7_ctrl_42` and 
 paired period by period and the prompt is the only difference. Full design and wording
 constraints: `docs/disclosure-treatment.md`.
 
+**This wave has run** (2026-08-07, commit `bf96f64`, $7.98, zero API failures). Results and
+the mechanism they point at are in `docs/disclosure-results.md`: discovery did not rise
+uniformly — market 8 improved on both sides, market 7 fell on both, market 4 sat still —
+and the split tracks whether disclosure converted the uninformed from prior-anchoring to
+price-reading. Three more seeds per market are what would settle it.
+
 ## Reading the results
 
 **Against the scripted floor, not against zero.** `make gate-stopped` measures what a PI
