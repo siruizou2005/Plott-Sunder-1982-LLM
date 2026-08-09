@@ -13,6 +13,7 @@ subjects could not deduce that dividends stay constant. A guard that only ever s
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import re
 
@@ -21,7 +22,8 @@ import pytest
 from ps1982.config import Config, Rules
 from ps1982.markets import MARKETS
 from ps1982.params import SEAT_NAMES, SEATS, SEAT_TYPE
-from ps1982.prompts import (build_brief, build_broadcast_brief, broadcast_system_prompt,
+from ps1982.prompts import (build_brief, build_broadcast_brief, build_period_end_brief,
+                            build_trade_feedback_brief, broadcast_system_prompt,
                             coerce_broadcast, coerce_turn, reflect_system_prompt,
                             system_prompt, validate)
 
@@ -55,6 +57,127 @@ def _all_prompts(market, seat):
     return "\n".join([system_prompt(seat, RULES, market),
                        broadcast_system_prompt(seat, RULES, market),
                        reflect_system_prompt(seat, RULES, market)])
+
+
+# ------------------------------------------------------------------- byte stability
+#
+# Every session in runs/ was prompted with exact bytes, and three things rest on those
+# bytes not moving. The paired comparisons: a treatment session and the baseline it is
+# read against must differ ONLY in the treatment, which is the whole claim the disclosure
+# arm makes. Prefix caching: DeepSeek keys on the system prompt, which is built once per
+# agent and reused for the session (llm_agent.py:64). And reproducibility: a scenario file
+# is supposed to describe the run it produced.
+#
+# Every treatment field in Rules therefore defaults to the value that reproduces the
+# baseline, and these digests are what turns that convention into a guarantee. They are
+# the acceptance criterion for any prompt edit: a failure means a prompt that has already
+# been paid for has changed. Regenerate them ONLY when you intend exactly that, and say so
+# in the commit message.
+#
+# To regenerate: run this file, read the digest out of the assertion message, paste it in.
+
+# Markets whose information design never deals a card to everyone — the ones Config lets
+# disclose_structure run on. Derived, so a new market joins the guard automatically.
+DISC_NUMBERS = [n for n in sorted(MARKETS) if "all" not in MARKETS[n].sequence_info]
+
+# Two year-end notes and one post-trade note, so the digests cover render_reflections —
+# the renderer the memo tier swaps out — and not just the empty-memory placeholder.
+FROZEN_NOTES = [
+    {"kind": "period_end", "period": 3, "round": 0, "at": None, "text": "year three note"},
+    {"kind": "trade_feedback", "period": 4, "round": 2,
+     "at": "after you bought one certificate at 250", "text": "bought high"},
+    {"kind": "period_end", "period": 4, "round": 0, "at": None, "text": "year four note"},
+]
+
+
+def _prompt_blob(rules: Rules, numbers: list[int]) -> str:
+    """Every system prompt of every kind, for every seat of every listed market."""
+    out = []
+    for n in numbers:
+        m = MARKETS[n]
+        for s in m.seats:
+            out += [system_prompt(s, rules, m, NAMES[s]),
+                    broadcast_system_prompt(s, rules, m, NAMES[s]),
+                    reflect_system_prompt(s, rules, m, NAMES[s])]
+    return "\n".join(out)
+
+
+def _brief_blob(rules: Rules, numbers: list[int]) -> str:
+    """Every user message of every kind, over every information condition a market has.
+
+    All four builders, because the treatments reach them unevenly: _clue_line is in three
+    of them and the year-end task in the fourth, and a guard that watched only the turn
+    brief would have let the memo tier rewrite a broadcast unnoticed.
+    """
+    out = []
+    for n in numbers:
+        m = MARKETS[n]
+        # Market 1's card is a row of marks; every other market's is a letter.
+        card = "0101010101" if m.imperfect else m.states[0]
+        quote = {"side": "bid", "price": 250, "seat": m.seats[1]}
+        for s in m.seats:
+            for info, c in (("none", None), ("insider", None), ("insider", card),
+                            ("all", card)):
+                out.append(build_brief(
+                    market=m, seat=s, period=5, round_no=1, turn_seq=1, info=info, card=c,
+                    certs=2, cash=10_000, book=EMPTY_BOOK, market_log=[],
+                    reflections=FROZEN_NOTES, history=[], not_selected=[], names=NAMES,
+                    rules=rules))
+                out.append(build_broadcast_brief(
+                    market=m, seat=s, period=5, quote=quote, info=info, card=c, certs=2,
+                    cash=10_000, book=EMPTY_BOOK, market_log=[], reflections=FROZEN_NOTES,
+                    history=[], not_selected=[], names=NAMES, rules=rules))
+                out.append(build_trade_feedback_brief(
+                    market=m, seat=s, period=5, round_no=1, side="buy", price=250,
+                    counterparty=m.seats[1], info=info, card=c, certs=2, cash=10_000,
+                    book=EMPTY_BOOK, market_log=[], reflections=FROZEN_NOTES, history=[],
+                    not_selected=[], names=NAMES, rules=rules))
+            out.append(build_period_end_brief(
+                market=m, seat=s, period=5, state=m.states[0], certs=2, cash=10_000,
+                dividend_paid=500, profit=100, reflections=FROZEN_NOTES, history=[],
+                market_log=[], not_selected=[], names=NAMES, rules=rules))
+    return "\n".join(out)
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+BASELINE_PROMPTS = "0aad73df09002ed7e2e67a91b5b000cc6a48b4d20af8a22788e576bb55acb4c9"
+TIER1_PROMPTS = "4abbef9bb71e0ef76afaf7047f0df9d60e8f3587f48850ba5fc3beba8b6cefcf"
+BASELINE_BRIEFS = "f017482e7ac41aeec1b3392babceb4ee347f2c07ef8fd3471ccc74f60cc9c33a"
+ANNOUNCE_BRIEFS = "bfe0ddc4b062c5cbe0d7254f55acf3ac062134e00b92e09abd121166c42a6dfe"
+TIER1_BRIEFS = "4151caea26296227b13b4b0c1d6472621da114caf3eca51d83becdfd5b5e1db4"
+
+
+def test_byte_stable_baseline_prompts():
+    """The prompts every completed baseline session was sent."""
+    got = _digest(_prompt_blob(Rules(), sorted(MARKETS)))
+    assert got == BASELINE_PROMPTS, f"baseline system prompts changed; digest is {got!r}"
+
+
+def test_byte_stable_tier1_prompts():
+    """The prompts runs/disclosed/ was sent. A ladder rung that perturbs these has
+    changed the arm the ladder is measured against."""
+    got = _digest(_prompt_blob(Rules(disclose_structure=True), DISC_NUMBERS))
+    assert got == TIER1_PROMPTS, f"tier-1 system prompts changed; digest is {got!r}"
+
+
+def test_byte_stable_baseline_briefs():
+    got = _digest(_brief_blob(Rules(), sorted(MARKETS)))
+    assert got == BASELINE_BRIEFS, f"baseline briefs changed; digest is {got!r}"
+
+
+def test_byte_stable_announce_briefs():
+    """The §14.4 arm's briefs. disclose_card_years shares its 'no investor has received'
+    sentence, so this digest is what stops the two treatments from drifting apart."""
+    got = _digest(_brief_blob(Rules(announce_no_info_period=True), sorted(MARKETS)))
+    assert got == ANNOUNCE_BRIEFS, f"announce-arm briefs changed; digest is {got!r}"
+
+
+def test_byte_stable_tier1_briefs():
+    got = _digest(_brief_blob(Rules(disclose_structure=True), DISC_NUMBERS))
+    assert got == TIER1_BRIEFS, f"tier-1 briefs changed; digest is {got!r}"
 
 
 # ---------------------------------------------------------------- forbidden language
