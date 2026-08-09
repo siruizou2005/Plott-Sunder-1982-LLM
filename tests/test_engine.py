@@ -279,6 +279,108 @@ def test_empty_reflection_is_recorded_not_swallowed(engine_factory):
     assert eng.state["S01"].reflections == []     # nothing fabricated into memory
 
 
+def test_truncated_reflection_is_recorded_and_still_kept(engine_factory):
+    """A note that hits its output cap is cut mid-sentence, and it is NOT empty — so it
+    passes the empty_note guard, is stored, and is carried into every later prompt this
+    seat receives with nothing in the log to say it is a fragment. One is already in
+    runs/disclosed/m7_disc_42: seat S07, year 2, 2,943 tokens of reasoning and 58 of body.
+
+    Kept rather than discarded, because a truncated note is still what the agent
+    remembers. The violation exists to make the rate visible.
+    """
+    class Overrunner(StubAgent):
+        kind = "llm"
+        reflect_system_text = "sys"
+
+        def reflect(self, kind, system, user):
+            return {"text": "I bought at 300 because my clue guarantees the divid",
+                    "raw": {"usage": {"completion_tokens": 3000}}}
+
+    eng, sink, agents = engine_factory(periods=1, max_rounds_per_period=1)
+    for s in ("S01", "S09"):
+        agents[s] = Overrunner(s)
+    agents["S01"].turns = [q("bid", 300)]
+    agents["S09"].accepts = True
+    eng.period, eng.info, eng.cards = 1, "none", {s: None for s in SEATS}
+    eng.run_turn("S01", 1, 1)
+
+    cut = [e for e in _events(sink, "violation") if e.payload["reason"] == "truncated_note"]
+    assert len(cut) == 2                                   # both sides of the trade
+    assert {e.seat for e in cut} == {"S01", "S09"}
+    assert cut[0].payload["kind"] == "trade_feedback"
+    assert cut[0].payload["chars"] == 52
+    # Recorded, but NOT dropped — this is the difference from empty_note.
+    assert len(eng.state["S01"].reflections) == 1
+    assert eng.state["S01"].reflections[0]["text"].endswith("divid")
+
+
+def test_a_note_under_its_cap_is_not_reported_as_truncated(engine_factory):
+    """The guard keys on the cap, so a short note must stay silent. Otherwise every note
+    in every run would carry a violation and the signal would be worthless."""
+    class Brief(StubAgent):
+        kind = "llm"
+        reflect_system_text = "sys"
+
+        def reflect(self, kind, system, user):
+            return {"text": "short and finished.",
+                    "raw": {"usage": {"completion_tokens": 140}}}
+
+    eng, sink, agents = engine_factory(periods=1, max_rounds_per_period=1)
+    for s in ("S01", "S09"):
+        agents[s] = Brief(s)
+    agents["S01"].turns = [q("bid", 300)]
+    agents["S09"].accepts = True
+    eng.period, eng.info, eng.cards = 1, "none", {s: None for s in SEATS}
+    eng.run_turn("S01", 1, 1)
+
+    assert [e for e in _events(sink, "violation")
+            if e.payload["reason"] == "truncated_note"] == []
+    assert len(eng.state["S01"].reflections) == 1
+
+
+def test_the_two_kinds_of_note_are_windowed_separately(engine_factory):
+    """design-deltas §5.3: under one shared window the post-trade notes evict the year-end
+    reflection, measured at 3.4 trade notes per seat per period against a window of three.
+
+    This logic had no test at all, and the memo tier depends on it: a memo is carried at
+    period_end_notes = 1 and is the whole of a seat's long-term memory, so a regression to
+    a shared window would silently delete it in any busy year.
+    """
+    eng, _, _ = engine_factory(periods=1, max_rounds_per_period=1)
+    st = eng.state["S01"]
+    for year in range(1, 5):
+        st.reflections.append({"kind": "period_end", "period": year, "round": 0,
+                               "at": None, "text": f"year {year}"})
+        for rnd in range(1, 4):
+            st.reflections.append({"kind": "trade_feedback", "period": year, "round": rnd,
+                                   "at": "after you bought one certificate at 250",
+                                   "text": f"trade {year}.{rnd}"})
+
+    eng.rules.period_end_notes, eng.rules.trade_notes = 2, 3
+    got = eng._notes_for("S01")
+    assert [n["text"] for n in got if n["kind"] == "period_end"] == ["year 3", "year 4"]
+    assert [n["text"] for n in got if n["kind"] != "period_end"] == \
+        ["trade 4.1", "trade 4.2", "trade 4.3"]
+    # Chronological across BOTH kinds, as written — not the two windows concatenated.
+    assert [n["text"] for n in got] == \
+        ["year 3", "year 4", "trade 4.1", "trade 4.2", "trade 4.3"]
+
+    # The memo tier's window: exactly one year-end note survives, whatever the trading.
+    eng.rules.period_end_notes = 1
+    got = eng._notes_for("S01")
+    assert [n["text"] for n in got if n["kind"] == "period_end"] == ["year 4"]
+
+    # And the two budgets are genuinely independent. Zero means NONE: `items[-0:]` is the
+    # obvious spelling and returns everything, so a memory-ablation arm asking for no
+    # trade notes would have received all twelve of them.
+    eng.rules.period_end_notes, eng.rules.trade_notes = 4, 0
+    got = eng._notes_for("S01")
+    assert len([n for n in got if n["kind"] == "period_end"]) == 4
+    assert [n for n in got if n["kind"] != "period_end"] == []
+    eng.rules.period_end_notes, eng.rules.trade_notes = 0, 0
+    assert eng._notes_for("S01") == []
+
+
 def test_reasoning_is_captured_and_never_fed_back(engine_factory):
     """The chain of thought is 91-96% of output tokens on this model and is the only
     direct record of HOW a price was reached — §11.3's primary evidence. It must reach the
@@ -430,9 +532,19 @@ def test_each_channel_gets_its_own_output_budget(monkeypatch):
     a = LLMAgent("S01", spec, Rules(), MARKETS[3], name="Nora")
 
     ctx = type("C", (), dict(
-        seat="S01", period=1, info="none", card=None,
+        seat="S01", period=1, round_no=1, turn_seq=1, info="none", card=None,
         quote={"side": "bid", "price": 200, "seat": "S07"},
         certs=2, cash=10_000, book={"bid": None, "ask": None, "spread": None},
         market_log=[], reflections=[], history=[], not_selected=[], names={"S01": "Nora"}))()
+
+    # All THREE channels, in order. This test used to assert only the broadcast: it
+    # defined the complete_text recorder and then never called it, so the reflect cap was
+    # unverified while the docstring claimed otherwise. The memo tier rests on that cap
+    # actually being sent — a memo asked for at 500-800 words and capped at the turn
+    # default would be truncated mid-sentence and stored anyway.
     a.respond_broadcast(ctx)
     assert seen[0] == 512, f"broadcast must send its own cap, got {seen[0]}"
+    a.reflect("period_end", a.reflect_system_text, "write your note")
+    assert seen[1] == 3000, f"reflect must send its own cap, got {seen[1]}"
+    a.decide_turn(ctx)
+    assert seen[2] == 8192, f"turn must send its own cap, got {seen[2]}"

@@ -73,7 +73,12 @@ class LLMAgent(Agent):
             info=ctx.info, card=ctx.card, certs=ctx.certs, cash=ctx.cash, book=ctx.book,
             market_log=ctx.market_log, reflections=ctx.reflections, history=ctx.history,
             not_selected=ctx.not_selected, names=ctx.names, rules=self.rules)
-        r = self.provider.complete_json(self.system, user, thinking=self.spec.thinking)
+        # The cap is passed explicitly even though the provider was constructed with the
+        # same number, so all three channels state their budget at the call site. The
+        # channel that did NOT was broadcast, and it ran on the provider default for the
+        # project's whole life while the scenarios said 512.
+        r = self.provider.complete_json(self.system, user, thinking=self.spec.thinking,
+                                        max_output_tokens=self.spec.max_output_tokens)
         env = _envelope(r, system=self.system, user=user)
 
         data = r.get("data")

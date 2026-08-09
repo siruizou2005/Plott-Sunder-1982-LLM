@@ -44,6 +44,20 @@ SUPERSEDED = "superseded"
 CROSSED_AUTO = "crossed_auto"
 
 
+def _last(items: list, n: int) -> list:
+    """The last ``n`` items, where n = 0 means NONE of them.
+
+    `items[-n:]` is the obvious spelling and it is wrong at zero: `[-0:]` is `[0:]`, so a
+    window of 0 returns everything. Every memory window here reads "how many to carry", so
+    0 has to mean none — a memory-ablation arm asking for no trade notes would otherwise
+    have received all of them, which is the opposite treatment.
+
+    Rules.market_log_window is NOT one of these: its 0 documents "the whole period", which
+    is market 5's photocopied log, and it is read separately.
+    """
+    return items[-n:] if n > 0 else []
+
+
 @dataclass
 class SeatState:
     seat: str
@@ -208,8 +222,10 @@ class Engine:
         of three — and §8 calls that reflection the design's main learning node.
         """
         notes = self.state[seat].reflections
-        year_end = [n for n in notes if n["kind"] == "period_end"][-self.rules.period_end_notes:]
-        trades = [n for n in notes if n["kind"] != "period_end"][-self.rules.trade_notes:]
+        year_end = _last(([n for n in notes if n["kind"] == "period_end"]),
+                         self.rules.period_end_notes)
+        trades = _last(([n for n in notes if n["kind"] != "period_end"]),
+                       self.rules.trade_notes)
         keep = {id(n) for n in year_end} | {id(n) for n in trades}
         return [n for n in notes if id(n) in keep]      # chronological, as written
 
@@ -217,7 +233,7 @@ class Engine:
         """Private memory, identical for every kind of call this seat receives."""
         st = self.state[seat]
         return {"reflections": self._notes_for(seat), "history": list(st.history),
-                "not_selected": st.not_selected[-self.rules.not_selected_window:]}
+                "not_selected": _last(st.not_selected, self.rules.not_selected_window)}
 
     def _turn_ctx(self, seat: str, round_no: int, turn_seq: int) -> TurnContext:
         st = self.state[seat]
@@ -226,6 +242,26 @@ class Engine:
             info=self.info, card=self.cards[seat], certs=st.holding.certs,
             cash=st.holding.cash, book=self.book.snapshot(),
             market_log=self._visible_log(), names=self.names, **self._memory(seat))
+
+    def _note_truncated(self, seat: str, kind: str, raw: dict | None, text: str) -> None:
+        """Record a note that hit its output cap. The note is kept, not dropped.
+
+        An empty note is caught by `empty_note` and is loud. A note cut off mid-sentence
+        is not caught by anything: it is non-empty, so it is stored and carried into every
+        later prompt this seat receives, and nothing in the log says it is a fragment.
+        One is already in runs/disclosed/m7_disc_42 — seat S07, year 2, 2,943 tokens spent
+        reasoning and 58 of body, ending mid-clause.
+
+        Reasoning draws on the same budget as the note, so this sits at the top of the
+        range rather than at the edge of it, and it gets far more likely the longer the
+        note asked for. Recorded rather than discarded because a truncated note is still
+        what the agent remembers: the rate is the thing worth knowing.
+        """
+        usage = (raw or {}).get("usage") or {}
+        cap = self.cfg.spec_for(seat).reflect_max_output_tokens
+        if cap and usage.get("completion_tokens", 0) >= cap:
+            self._violation(seat, "reflect", None, None, "truncated_note",
+                            {"kind": kind, "usage": usage, "chars": len(text)})
 
     def _violation(self, seat: str, attempted: str, side: str | None, price: int | None,
                    reason: str, extra: dict | None = None) -> None:
@@ -303,6 +339,7 @@ class Engine:
                                 {"kind": "trade_feedback",
                                  "usage": (out.get("raw") or {}).get("usage")})
                 continue
+            self._note_truncated(seat, "trade_feedback", out.get("raw"), text)
             verb = "bought" if side == "buy" else "sold"
             self.state[seat].reflections.append({
                 "kind": "trade_feedback", "period": self.period, "round": self.stream.round,
@@ -680,6 +717,7 @@ class Engine:
                                 {"kind": "period_end",
                                  "usage": (res.get("raw") or {}).get("usage")})
                 continue
+            self._note_truncated(seat, "period_end", res.get("raw"), text)
             self.state[seat].reflections.append({
                 "kind": "period_end", "period": period, "round": 0, "at": None,
                 "text": text})
