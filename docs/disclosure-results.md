@@ -140,9 +140,25 @@ others are informed; it is whether they act on the price.
 
 The market-7 reversal and the market-8 improvement are the two results worth confirming,
 and each rests on one session. Three or four seeds per market would settle whether the
-split is the type-role difference or the draw. Seeds 43 and 44 already have completed
-baselines on both markets, so two more sessions per market extend the pairing at no design
-cost.
+split is the type-role difference or the draw.
+
+**This turned into a ladder rather than more seeds at the same rung**
+(`docs/disclosure-treatment.md`; waves `ladder2` and `ladder3`, designed and not run). The
+reason is the mechanism above: what disclosure did was *delete* an ambiguity, and the two
+ambiguities this arm deliberately left standing are exactly the ones that would let an
+agent complete the inference instead of stopping at the ceiling. Rung 2 announces which
+years hand out cards, so a blank card in a card year stops meaning "either I am uninformed
+or nobody is"; rung 3 states that the holders never change, which makes cross-period
+inference possible at all. Each rung runs two seeds per market, so it also buys the extra
+seeds — four sessions per market across the two rungs.
+
+**Not seeds 43 and 44.** They have completed baselines, but on market 7 they are the two
+most buy-heavy draws in the family (6/3 and 7/2 over the nine informed periods), and the
+whole result above lives on the sell side — three periods per market. The ladder runs m7
+{42, 45} and m8 {42, 44} instead, each pooling to 9 buy / 9 sell. Choosing seeds on their
+draws is something `m7_control.yaml` refuses to do; the argument for why it is admissible
+here (blocking on a pre-treatment covariate inside a paired contrast, not sample selection)
+is in the treatment doc and pinned in `tests/test_markets.py`.
 
 The market-4 result — directional swing collapsed while discovery held — is the cleanest
 test of the free-rider reading, because it separates "did the uninformed learn" from "did

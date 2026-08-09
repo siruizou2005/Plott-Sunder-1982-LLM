@@ -1,21 +1,32 @@
-# The structural-disclosure treatment
+# The disclosure ladder
 
-`Rules.disclose_structure`, off by default. Three sessions in wave `disclosed`
-(`./run_proposed.sh disclosed`), each paired to a completed baseline by seed:
+What every investor is told about the structure of the market, as an ordered dial. Rung 0
+is the faithful baseline; each rung above it states one more fact and states nothing else
+new. All of it is flag-gated and off by default, so the baseline and every completed
+session render byte-identical prompts.
 
-| session | market | seed | sequence | paired baseline |
-|---|---|---|---|---|
-| `disclosed/m4_disc_paper` | 4 | 20250755 | `paper_exact` (Table 1) | `runs/m4/m4_paper_0` |
-| `disclosed/m7_disc_42` | 7 | 42 | `random_prior` | `runs/control/m7_ctrl_42` |
-| `disclosed/m8_disc_42` | 8 | 42 | `random_prior` | `runs/control/m8_ctrl_42` |
+| rung | flag added | what it adds to the prompt | status |
+|---|---|---|---|
+| 0 | — | Table 1's "How Many: No" | run: `runs/control/`, `runs/m4/` |
+| 1 | `disclose_structure` | the per-type dividend table, the agent's own type, two of each type's four hold a card in a card year | run: `runs/disclosed/` |
+| 2 | `disclose_card_years` | and each year is announced as a card year or not, in both directions | designed, not run |
+| 3 | `disclose_insiders_fixed` | and the investors holding the cards are the same ones every card year | designed, not run |
 
-`Market.redrawn` keys its RNG on `ps1982-m{number}-seq-{seed}`, so the two `random_prior`
-sessions draw the same fourteen states their baselines drew. Everything else in the
-scenario files is the paired baseline's value — model, three thinking budgets, 3 rounds,
-W=12, rules — so the prompt disclosure is the only difference and the comparison is
-paired period by period.
+Two more dials ride with rungs 2 and 3 and are held constant across them:
+`objective_profit_max` and `clue_is_certain` (below). So **rung 2 minus rung 1 is a bundle
+of three dials, and only rung 3 minus rung 2 is a single-dial contrast.** The ladder is a
+dose-response, not four clean comparisons, and a large rung-2 effect will not say which of
+the three caused it.
 
-## The question
+## What is never disclosed, at any rung
+
+**Which investors hold the cards.** Every rung's text opens the same clause — "No one is
+told which investors they are" — and there is no flag that removes it. Seat ids stay out
+of every prompt as before, and the section's only digits are the dividend values, so a
+leaked period number, informed count or schedule fails the guard rather than reaching an
+agent.
+
+## The question the ladder answers
 
 Plott & Sunder's subjects sat in one room. They could count twelve people, watch the
 experimenter walk the same envelope route every period, and accumulate a sense of the
@@ -23,71 +34,206 @@ design's shape that the instructions never stated. The baseline prompt gives an 
 none of that: it learns its own two dividend amounts and is told only that "earnings may
 be different for different investors" — the number of types, everyone else's amounts and
 the informed count are all unbounded. Any shortfall against the paper is therefore
-ambiguous between *failed aggregation* and *starved common knowledge*. This arm removes
-the second reading by handing the structure over and measuring what moves.
+ambiguous between *failed aggregation* and *starved common knowledge*.
 
-## What is disclosed, and what is not
+Rung 1 removed the second reading and produced a result nobody predicted
+(`docs/disclosure-results.md`): discovery did not rise uniformly. Market 8 improved on
+both sides, market 7 fell on both, market 4 sat still. The mechanism is a **deletion**. A
+baseline agent watching the price climb to 340 has two explanations it cannot separate —
+someone holds a letter, or someone simply values it more — and both point at following the
+price. Not knowing what anyone else's certificate is worth was doing the price discovery.
+Disclosure removes the second reading, so extracting information now needs one more step:
+*a price above every uninformed valuation can only mean someone is informed.* Market 7's
+agents stopped at "260 is the ceiling, I will not chase" and never took it.
 
-In: the full per-type dividend table (all three types, both states), the agent's own type
-named, four investors per type, and that in a year when lettered cards are handed out
-exactly two of each type's four hold one.
+Rungs 2 and 3 exist because that step has two remaining obstacles, and each rung removes
+one.
 
-Out, deliberately:
+## Rung 2 — the card years, in both directions
 
-- **Identities.** No one is told which investors hold the cards, and seat ids stay out of
-  every prompt as before.
-- **Fixedness.** The true mechanism fixes the same two per type for the whole session,
-  but the text says only that no one is told "whether they are the same investors from
-  year to year" — silence in both directions, as the baseline is silent.
-- **The schedule.** Which years are card years (5–13 in all three markets) is not stated.
-  The allocation sentence is conditional — "in a year in which clue cards that are not
-  blank are handed out" — and the section closes by saying such all-blank years may
-  exist and are not announced, so a blank card stays ambiguous between "I am one of the
-  uninformed two" and "no one holds a letter this year". `announce_no_info_period` stays
-  unset.
+`disclose_card_years`. Under rung 1 a blank card is still ambiguous between "I am one of
+the uninformed two" and "no one holds a letter this year" — the section says so
+explicitly, and the rung-1 sell side is where the whole result sat. Rung 2 announces the
+condition of every year, so a blank card in a card year means *I am one of the uninformed*
+and nothing else. That is the premise the price-based inference needs.
 
-## Wording constraints
+Two properties of the wording matter:
 
-The section lives inside the instruction vocabulary and the prompt guards hold it there
-(`tests/test_prompts.py`, the structural-disclosure block):
+- **Both directions, every year.** A sentence only in the no-card years would leave an
+  insider year silent and indistinguishable from the baseline, and the blank card would
+  stay ambiguous.
+- **Silent on how many.** "This year lettered clue cards have been handed out" is true of
+  an `"all"` period as well as an `"insider"` one, and reads identically for every seat, so
+  an agent holding a letter learns nothing there that a blank-card holder does not.
+
+It also replaces the rung-1 section's closing sentence, which says such years are *not*
+announced and would otherwise become false.
+
+**It subsumes `announce_no_info_period`** (the §14.4 arm), which speaks only in the no-card
+direction. The two write the same sentence there and share one branch in `brief.py`, so no
+configuration can print it twice; `Config` refuses `announce_no_info_period: false` beside
+the rung, because that asks for silence and an announcement at once and the winner would
+be invisible in the log.
+
+## Rung 3 — the card holders do not change
+
+`disclose_insiders_fixed`. One sentence, replacing "or whether they are the same investors
+from year to year" with "but they are the same investors in every year in which such cards
+are handed out".
+
+**This is true of the engine, not asserted.** `Market.insiders` is the first
+`insiders_per_type` seats of each type block, derived from the roster; `clue_cards` tests
+membership in it for every insider period; `redrawn()` touches only the realized states.
+`engine.py` already records it as `fixed_insiders` in `period_start`.
+`test_fixedness_disclosure_matches_the_engine` walks every insider period of every market
+the rung runs on and asserts the lettered cards land on the same seats every time — the
+wording and the dealing move together or the suite fails.
+
+What it makes available is cross-period inference: an agent that identifies a likely card
+holder in year 6 can carry the suspicion to year 7. Rung 1 explicitly denied it that.
+
+## The two dials that ride along
+
+Both are on in rungs 2 and 3 and off below, so neither is separable from rung 2.
+
+**`objective_profit_max`** puts an explicit earnings objective in the *shared preamble*,
+which is the only place that reaches the turn, the broadcast and the reflection prompts
+alike. The baseline states its purpose once, in `_TURN_TASK` — the paper's own "You are
+free to make as much profit as you can" — so a broadcast reply and a year-end note are
+written without any objective at all, and between them those two channels are 73% of calls
+and all of the durable memory. The paper's sentence stays; this adds to it.
+
+**`clue_is_certain`** states no new fact. The instructions already say a card carrying a
+letter "is always correct" and the year's card line already says the dividend WILL be paid.
+The stronger wording *contains* the baseline sentence verbatim, so guards written against
+the old text still hold. It is an **insider-side** dial — only a lettered-card holder reads
+the changed sentence — where the two disclosure rungs are uninformed-side, and the write-up
+should not lump them together. `Config` refuses it on market 1, whose card is a ten-draw
+sample either box can produce; the imperfect-clue branch means it could not render there
+anyway.
+
+## Wording constraints, unchanged from rung 1
+
+The section lives inside the instruction vocabulary and the prompt guards hold it there,
+at every rung:
 
 - No probability language, no theory words — "clue card that is not blank", never
-  "insider"; the same forbidden-word lists that guard the baseline run against the
-  disclosed prompts.
+  "insider". The same forbidden-word lists that guard the baseline run against every rung.
 - The prior is never a number; it exists only as the bingo cage.
-- The only digits in the section are the dividend values themselves — the guard asserts
-  the integer set of the section equals the market's dividend set, so a leaked period
-  number or schedule fails loudly.
-- The baseline's common-knowledge fact 1 ("No one is told how many…") would contradict
-  the section outright, so under the flag it is replaced by one that points at the
-  section and restates the one thing still hidden: WHICH investors they are.
-- The baseline prompt is byte-identical with the flag off — the completed sessions'
-  prompts are unchanged, which prefix caching and the pairing both require.
+- The only digits in the section are the dividend values themselves, asserted as a set
+  equality on every rung, so a leaked period number or schedule fails loudly. Counts are
+  spelled as words for this reason.
+- The baseline's common-knowledge fact 1 ("No one is told how many…") would contradict the
+  section outright, so under `disclose_structure` it points at the section instead and
+  restates what is still hidden: WHICH investors they are.
 
-`Config` refuses the flag on any market whose `sequence_info` contains `"all"` periods
-(markets 1, 2, 3, 6, 92): in those periods every investor holds a card, which would make
-the two-per-type sentence false. The treatment is defined for markets 4, 5, 7, 8 and the
-stopped variants 93–95; only 4, 7 and 8 are run.
+### Why the tails are four literals
+
+The section's closing paragraph is a `{tail}` slot with four hand-wrapped literals, one per
+`(fixedness, card years)` combination, rather than three composable sentences. The
+paragraph is hard-wrapped at ~87 columns and its first line *continues* `blanks. `, so a
+sentence swapped into the middle has to be re-wrapped anyway — the same reason
+`_EARNINGS_PRIVATE`/`_EARNINGS_DISCLOSED` and `_IMPROVEMENT_ON`/`_OFF` are literals. The
+`(False, False)` tail is the pre-ladder bytes.
+
+Because the four wrap differently, a sentence sits on one line in one rung and straddles
+two in the next. The guards flatten whitespace before matching, or every one of them would
+be a test of the line breaks.
+
+### The byte-stability contract
+
+`tests/test_prompts.py` opens with five SHA-256 digests: the baseline prompts, the rung-1
+prompts, and the briefs under three configurations. They cover every system prompt of every
+kind for every seat of every market, and all four user-message builders over every
+information condition.
+
+They are the acceptance criterion for any prompt edit. A failure means a prompt that has
+**already been paid for** has changed, which breaks three things at once: the paired
+comparisons, whose whole claim is that a treatment session differs from its baseline in the
+treatment and nothing else; DeepSeek's prefix cache, which keys on the system prompt; and
+the scenario files, which are supposed to describe the runs they produced. Regenerate only
+when that is the intent, and say so in the commit message.
+
+## Which markets a rung can run on
+
+`Config` refuses `disclose_structure` on any market whose `sequence_info` contains `"all"`
+periods (markets 1, 2, 3, 6, 92): every investor holds a card there, which would make the
+two-per-type sentence false. Rungs 2 and 3 require `disclose_structure` — without it,
+fixedness has no sentence to modify and the per-year announcement would report on a
+structure never introduced — so they inherit that rejection rather than repeating it. The
+ladder is defined for markets 4, 5, 7, 8 and the stopped variants 93–95.
+
+## The sessions
+
+Rung 1 ran three sessions (`./run_proposed.sh disclosed`), each seed-paired to a completed
+baseline:
+
+| session | market | seed | paired baseline |
+|---|---|---|---|
+| `disclosed/m4_disc_paper` | 4 | 20250755 (`paper_exact`) | `runs/m4/m4_paper_0` |
+| `disclosed/m7_disc_42` | 7 | 42 | `runs/control/m7_ctrl_42` |
+| `disclosed/m8_disc_42` | 8 | 42 | `runs/control/m8_ctrl_42` |
+
+Rungs 2 and 3 are designed and **not run**: `./run_proposed.sh ladder2` and
+`./run_proposed.sh ladder3`, four sessions each.
+
+| session | market | seed | drawn buy/sell | paired baseline | rung-1 pair |
+|---|---|---|---|---|---|
+| `ladder{2,3}/m7_lad{2,3}_42` | 7 | 42 | 5 / 4 | `runs/control/m7_ctrl_42` | yes |
+| `ladder{2,3}/m7_lad{2,3}_45` | 7 | 45 | 4 / 5 | `runs/control/m7_ctrl_45` | no |
+| `ladder{2,3}/m8_lad{2,3}_42` | 8 | 42 | 6 / 3 | `runs/control/m8_ctrl_42` | yes |
+| `ladder{2,3}/m8_lad{2,3}_44` | 8 | 44 | 3 / 6 | `runs/control/m8_ctrl_44` | no |
+
+`Market.redrawn` keys its RNG on `ps1982-m{number}-seq-{seed}`, so every session on a seed
+draws the same fourteen states, and every comparison is paired period by period.
+
+### The seeds were chosen on their draws, and that needs an argument
+
+Each market's pair pools to **9 buy / 9 sell** over the informed periods.
+`scenarios/m7_control.yaml` and `docs/proposed-sessions.md` §Arm 3 both record that
+filtering seeds on the buy/sell balance was considered and **declined**, so this needs the
+distinction that refusal does not cover.
+
+That refusal is about a reported **level** — the control arm's discovery against 1.0 —
+where selecting the sample on the variable under study biases the estimate. The ladder
+reports a paired within-market **difference**, and because the treatment is a prompt, the
+same drawn sequence appears on both sides of every comparison. Balancing the states
+therefore moves the *precision* of the paired difference, not its expectation. It is
+blocking on a pre-treatment covariate, not sample selection.
+
+The sell side is what makes it worth doing: the entire rung-1 result lived there (market 7
+−0.310, market 8 +0.324, three periods each), and market 7's unfiltered seeds 43 and 44 are
+its two most buy-heavy draws (6/3 and 7/2).
+`test_the_seeds_the_ladder_runs_are_balanced_and_that_is_a_choice` pins the counts and the
+argument together, so neither can drift without the other.
+
+Seed 42 is in both pairs because it is the only seed carrying a completed rung-1 session,
+which is what makes the full four-rung ladder exist anywhere.
 
 ## Reading the results
 
-- **Market 4** is the published-family case: the informed buy side sits 165 francs from
-  its target and period 14 ends uninformed. Read D per period against `m4_paper_0` and
-  the period-14 level against the same session's.
-- **Markets 7/8** are where the free-rider identity bites: v̄ is the largest uninformed
-  valuation, so no uninformed agent can push the buy-side price toward RE without
-  learning, and these markets have no free riders on either side. A disclosed agent knows
-  enough structure to reason "a price above every uninformed valuation means someone with
-  a letter is buying" — the price-based inference the scripted-RE rule needs and the
-  baseline sell side never triggered. Whether disclosure closes any of the measured
-  buy/sell gap (−0.337 on market 7, −0.509 on market 8, against +0.297 on market 3) is
-  the measurement. Read as differences from the scripted baselines (seed 42, unchanged),
-  never against 1.0 on the buy side — the identity is about *learning*, and disclosure
-  changes what there is to learn from, not the identity itself.
-- **Do not pool with the baselines.** These sessions test the baselines' external
-  validity; folding them into the replication counts would launder the treatment into
-  the result.
+- **Read as differences from the measured baselines, never against 1.0 on the buy side.**
+  The free-rider identity is algebraic: v̄ is the largest uninformed valuation and a buy
+  state is defined by re > v̄, so no uninformed agent can push the buy-side price toward RE
+  without learning. Markets 7 and 8 have no free riders on either side. The scripted null
+  buy/sell gaps are −0.337 on market 7 and −0.509 on market 8, against **+0.297** on market
+  3, and the scripted rule has not changed.
+- **The prediction the ladder tests.** Rung 1's split tracked whether what was disclosed
+  left the marginal type able to sit still: market 7 tells type I it both sets v̄ and wins
+  the buy state, market 8 tells type I it tops neither. If that reading is right, rungs 2
+  and 3 should widen market 8's gain and do less for market 7 — and if the split was the
+  draw rather than the type roles, they should not.
+- **Rung 3 minus rung 2 is the only clean contrast.** Attribute a rung-2 effect to the
+  bundle, not to the card-year announcement.
+- **Do not pool with the baselines.** These sessions test the baselines' external validity;
+  folding them into the replication counts would launder the treatment into the result.
 
-Cost: three 3-round sessions, ~$2.5 and ~8 h each in parallel (36 requests in flight at
-ceiling). The disclosure block adds ~1.4k characters to a cached prefix; the cost effect
-is noise.
+Cost: four 3-round sessions per wave, ~$2.5 and ~8 h each in parallel (48 requests in
+flight at ceiling), so ~$10.5 a wave and ~$21 for both. The added text is a few hundred
+characters on a cached prefix plus one line per year; the cost effect is noise.
+
+## Not part of this ladder
+
+`Rules.period_end_style` (`docs/design-deltas.md` §5.4) is an orthogonal dial that changes
+how much an agent writes, not what it knows. The eight ladder scenarios deliberately leave
+it at `"note"`: folding it in would make rung 2 minus rung 1 a bundle of four.

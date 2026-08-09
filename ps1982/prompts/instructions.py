@@ -9,10 +9,13 @@ Three hard constraints, all taken from the paper or the design doc:
    two boxes of chips rather than as a likelihood.
 2. Nothing is said about how many investor types exist, what anyone else's dividends are,
    whether the informed agents stay the same across periods, or how likely either state
-   is (design doc §3.3). This describes the BASELINE: `Rules.disclose_structure` is the
-   one deliberate, flag-gated treatment exception, and it discloses the type structure
-   and the per-type informed count — never identities, never the schedule of card years,
-   and never whether the card holders stay the same across years.
+   is (design doc §3.3). This describes the BASELINE, which is the bottom rung of a
+   flag-gated ladder (docs/disclosure-treatment.md): `disclose_structure` states the type
+   table and the per-type informed count, `disclose_card_years` states which years hand
+   out cards, `disclose_insiders_fixed` states that the holders never change. All three
+   default to False and the digests in tests/test_prompts.py hold the rungs below apart.
+   WHICH investors hold the cards is disclosed at no rung, and the prior is never a
+   number at any of them.
 3. The common-knowledge facts of design doc §3.2 ARE stated explicitly, because subjects
    could deduce them from the physical setup and our agents cannot. Which facts qualify
    is per-market: market 1's subjects could NOT deduce that dividends stay constant

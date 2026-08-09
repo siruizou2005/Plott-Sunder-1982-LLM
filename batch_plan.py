@@ -124,8 +124,11 @@ def control_arm(markets: tuple[int, ...] = CONTROL_ARM_MARKETS):
 
 # ---------------------------------------------------------------- the proposed arms
 #
-# Sixteen sessions in four waves, written for the LLM-agent paper. Each wave is one arm
-# and answers one threat; docs/proposed-sessions.md states which. They are NOT folded into
+# Twenty-four sessions in six waves, written for the LLM-agent paper. Each wave is one arm
+# and answers one threat; docs/proposed-sessions.md states which. The first four waves have
+# run and the two ladder waves have not — but do not take that from a comment: read
+# `status` out of runs/<run_name>/*.meta.json, which is the only source that cannot go
+# stale. Prose here has been wrong in both directions. They are NOT folded into
 # plan() for the same reason the control and rounds arms are not: those 26 sessions are the
 # replication of a published experiment and these are follow-ups that vary something the
 # experiment did not have.

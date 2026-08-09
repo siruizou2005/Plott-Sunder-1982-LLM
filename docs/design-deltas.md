@@ -84,7 +84,7 @@ about. So:
   also cannot fail to look at something. Design document §6 ① specifies this.
 - **Stateless calls.** An agent keeps no conversation. Its entire memory is what the briefing
   carries: its own recent notes and its year-by-year record. This makes memory an explicit,
-  auditable design parameter (`reflection_window`) rather than an emergent property of a
+  auditable design parameter (`period_end_notes` / `trade_notes`) rather than a property of a
   context window.
 - **No byte-exact replay.** Model output is not reproducible, so the JSONL log *is* the
   artifact. The seeded RNG covers only the round order and the tie-break; both are recorded.
@@ -152,8 +152,14 @@ prior expected value, **20 of 20 stated the wrong one** — type I said 250, typ
 the 50/50 answer instead of the bingo cage's 16 of 40. Not one was right. That is worse than
 the broadcast channel's 67%, and it does more damage: a note is *durable memory*, so the
 next turn — reasoning with thinking on — reads "my expected value is 250" as its own past
-conclusion. `reflect_thinking` now defaults to true and the token cap rose to 1,200, since
-reasoning draws on the same budget.
+conclusion. `reflect_thinking` now defaults to true and the token cap rose, since reasoning
+draws on the same budget.
+
+It rose twice. 1,200 was the first move and was still too tight: on the probe run **6 of 12
+year-end calls spent the entire budget reasoning and returned nothing at all**, which the
+engine records as `empty_note`. `reflect_max_output_tokens` is now **3,000**, and even there
+about 3% of year-end notes come back empty in a completed session. Reasoning is roughly four
+times the note it produces — median 376 tokens of thinking against 142 of body.
 
 ### 5.3 The two kinds of note get separate slots
 
@@ -216,6 +222,57 @@ because a fixed map would tie whatever prior the model holds about a name to the
 and insider status in every repetition, so it would not average out across sessions. The
 realized mapping is in `session_start.seat_names`; the log, the metrics and the viewer keep
 the seat IDs. `tests/test_prompts.py` asserts no seat ID appears in any prompt.
+
+### 5.7 The year-end summary has a second style: one memo, rewritten
+
+`Rules.period_end_style`. `"note"` is the baseline and the default; `"memo"` is a flag-gated
+alternative, designed and not yet run.
+
+**Why.** The baseline asks for "about 100 words" and gets them — median **105 words** over
+two completed sessions, IQR 520–630 characters, the whole distribution inside 246–866. The
+ask is being honoured tightly, which is the problem: fourteen years produce fourteen short,
+disconnected notes behind a window of two (§5.3), so a conclusion reached in year 3 is gone
+by year 6 unless the agent happens to restate it. Nothing in the design carries a view
+forward. `docs/agent-reasoning.md` reports the consequence from the other end — neither the
+propensity to read the price nor the quality of the reading improves over a session, with
+notes or without them.
+
+**What it is.** One standing document. At each year end the agent is shown its previous memo
+verbatim and writes the whole thing again, between 500 and 800 words (`Rules.memo_words`).
+The new version **replaces** the old one, and the prompt says so: *anything you leave out is
+gone, and you will not see it again.* That sentence is the mechanism. A memo that merely
+accumulated would be a longer note; a memo that replaces its predecessor forces the agent to
+decide each year what is still worth carrying, which is what makes it continuous and what
+makes the length honest.
+
+**One prompt, two occasions.** Both reflection calls share `reflect_system_text` — the
+year-end one and the one written straight after a trade. A task block that simply said
+"rewrite your memo" would land on every post-trade note too, where the brief asks for one or
+two sentences, and the two would contradict each other several times a period. The memo
+block names both occasions and defers to the closing line of the brief to say which is in
+force. Guards pin both halves.
+
+**Two hard constraints, both enforced by `Config`:**
+
+- **`period_end_notes` must be 1.** The memo already contains its own history, so carrying
+  two hands the agent a superseded copy of its own conclusions beside the current one.
+- **`reflect_max_output_tokens` must clear 4,096.** 500–800 words is ~1,100 output tokens of
+  body before any reasoning, and reasoning shares that budget (§5.2). The default 3,000
+  trips the floor, so every memo scenario has to raise it deliberately — 8,192 is the value
+  the scenarios use elsewhere.
+
+**Cost lands on the input side, not the output side.** Notes ride in the user message, which
+no prefix cache covers, and they appear in ~96% of turn and broadcast prompts (3,494 of
+3,621 in a completed session). Replacing two ~105-word notes with one ~650-word memo adds
+roughly 600 tokens to each of ~4,100 prompts: **~+$0.35 of input against ~+$0.06 of output,
+about +16% on a $2.47 session.** The fourteen calls that write the memo are the cheap part.
+
+**A truncated memo is worse than a truncated note**, which is why `truncated_note` was added
+first: a note cut off mid-sentence is non-empty, so it passes the `empty_note` guard and is
+stored and carried forward with nothing in the log to say it is a fragment. One is already
+in `runs/disclosed/m7_disc_42` (seat S07, year 2 — 2,943 tokens reasoning, 58 of body). Under
+the memo style that fragment would be the seat's entire long-term memory. The violation
+records it and keeps it; the budget floor is what makes it rare.
 
 ---
 

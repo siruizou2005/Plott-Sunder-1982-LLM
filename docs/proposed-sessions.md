@@ -1,29 +1,36 @@
-# Sixteen proposed sessions
+# Twenty-four proposed sessions
 
-Written for the LLM-agent paper (`19-Analysis/paper-llm`). Nothing here has been run. Each
-arm is justified by a specific threat to a specific claim in that manuscript; the numbers
-below were computed from the reported sessions, not estimated.
+Written for the LLM-agent paper (`19-Analysis/paper-llm`). Each arm is justified by a
+specific threat to a specific claim in that manuscript; the numbers below were computed
+from the reported sessions, not estimated.
 
-Four waves, one arm each, run **one wave at a time**. A session holds at most
+**Sixteen of the twenty-four have run — the first four waves, all of them.** The eight in
+`ladder2` and `ladder3` have not. This header has been wrong before in both directions, so
+check rather than read: for each scenario in a wave, take its `run_name` and read `status`
+out of `runs/<run_name>/*.meta.json`.
+
+Six waves, one arm each, run **one wave at a time**. A session holds at most
 `broadcast_workers` requests in flight, so sessions × W is a structural ceiling against
-Bailian's tolerated 50–80: the waves are 72, 48, 36 and 36, and all sixteen at once would
-be 192. W stays at 12 in every file because the 26 sessions these arms are read against
-all ran at 12.
+Bailian's tolerated 50–80: the waves are 72, 48, 36, 36, 48 and 48, and the two unrun ones
+together would be 96. W stays at 12 in every file because the 26 sessions these arms are
+read against all ran at 12.
 
 ```
 make gate-stopped                            # free: the engine gate on the new markets
-DRY=1 ./run_proposed.sh rounds               # print the wave, launch nothing
-./run_proposed.sh rounds                     # then stopped, then sellside, then disclosed
-./resume_proposed.sh rounds                  # after an interruption
+DRY=1 ./run_proposed.sh ladder2              # print the wave, launch nothing
+./run_proposed.sh ladder2                    # then ladder3
+./resume_proposed.sh ladder2                 # after an interruption
 ```
 
-| wave | sessions | wall clock | cost | threat |
-|---|---|---|---|---|
-| `rounds` | 6 | ~13–15 h | ~$23 | truncation |
-| `stopped` | 4 | ~7–8 h | ~$10 | the sag benchmark |
-| `sellside` | 3 | ~8 h | ~$7.5 | sell-side sample |
-| `disclosed` | 3 | ~8 h | ~$7.5 | the common-knowledge deficit |
-| | **16** | **~38 h** | **~$48** | |
+| wave | sessions | wall clock | cost | threat | status |
+|---|---|---|---|---|---|
+| `rounds` | 6 | ~13–15 h | ~$23 | truncation | run |
+| `stopped` | 4 | ~7–8 h | ~$10 | the sag benchmark | run |
+| `sellside` | 3 | ~8 h | ~$7.5 | sell-side sample | run |
+| `disclosed` | 3 | ~8 h | ~$7.5 | the common-knowledge deficit | run |
+| `ladder2` | 4 | ~8 h | ~$10.5 | the deficit, dialled up one rung | **not run** |
+| `ladder3` | 4 | ~8 h | ~$10.5 | and one rung further | **not run** |
+| | **24** | **~54 h** | **~$69** | | |
 
 Costs are measured, not projected: the market-4 rounds arm ran six sessions at 4, 5 and 6
 rounds and recorded $3.77–$4.04 and 13.0–13.2 h for the 6-round pair, against ~$2.47 and
@@ -162,7 +169,53 @@ constraints: `docs/disclosure-treatment.md`.
 the mechanism they point at are in `docs/disclosure-results.md`: discovery did not rise
 uniformly — market 8 improved on both sides, market 7 fell on both, market 4 sat still —
 and the split tracks whether disclosure converted the uninformed from prior-anchoring to
-price-reading. Three more seeds per market are what would settle it.
+price-reading. Arms 5 and 6 are what it turned into.
+
+## Arm 5 and Arm 6 — two more rungs of the ladder (4 sessions each, waves `ladder2`, `ladder3`)
+
+```
+scenarios/m7_ladder2_s42.yaml  m7_ladder2_s45.yaml  m8_ladder2_s42.yaml  m8_ladder2_s44.yaml
+scenarios/m7_ladder3_s42.yaml  m7_ladder3_s45.yaml  m8_ladder3_s42.yaml  m8_ladder3_s44.yaml
+```
+
+**Threat.** The same one as Arm 4 — the common-knowledge deficit — but Arm 4's result says
+the deficit is not a single quantity. Disclosure *deleted* an ambiguity that had been doing
+useful work, and whether an agent then performed the inference it needs instead depended on
+what the disclosure left its own type able to believe. Two things Arm 4 deliberately kept
+hidden are the remaining obstacles, and one rung removes each.
+
+**Design.** Rung 2 (`disclose_card_years`) announces each year as a card year or not, in
+both directions, so a blank card in a card year means *I am one of the uninformed* rather
+than *either that or nobody is informed*. Rung 3 (`disclose_insiders_fixed`) adds that the
+card holders are the same investors every card year, which makes cross-period inference
+available for the first time. Full design, wording and the truth-check of each new sentence
+against the engine: `docs/disclosure-treatment.md`.
+
+**The caveat that has to travel with any result.** `objective_profit_max` and
+`clue_is_certain` ride with both rungs, so **rung 2 − rung 1 is a bundle of three dials.**
+Only **rung 3 − rung 2 is a single-dial contrast**. A large rung-2 effect will not say which
+of the three produced it; the ladder is a dose-response, not four clean comparisons.
+
+**Seeds, and why these ones.** m7 runs {42, 45}, m8 runs {42, 44}; each market's pair pools
+to 9 buy / 9 sell over the informed periods. That is a departure from Arm 3, which declined
+to filter seeds on the balance — and the distinction is the estimand. Arm 3 reports a
+**level** (discovery against 1.0), where selecting on the variable under study biases the
+estimate. The ladder reports a **paired within-market difference**, and the treatment is a
+prompt, so the same drawn sequence sits on both sides of every comparison: balancing moves
+the precision of the difference, not its expectation. That is blocking on a pre-treatment
+covariate. It is worth doing because the entire Arm 4 result lived on the sell side (three
+periods per market), and m7's unfiltered seeds 43 and 44 are its two most buy-heavy draws.
+`tests/test_markets.py` pins the counts and the argument together.
+
+Seed 42 is in both pairs because it is the only seed with a completed rung-1 session, so
+the full four-rung ladder exists there and nowhere else.
+
+**Cost.** ~$10.5 and ~8 h per wave, from Arm 4's measured 4,269–4,545 calls and $2.47–$2.81
+per session. 4 × 12 = 48 in flight; both waves at once would be 96, past the ceiling.
+
+**Not folded in.** `Rules.period_end_style` is an orthogonal dial and these scenarios leave
+it at `"note"` — see `docs/design-deltas.md` §5.7. Folding it in would make rung 2 − rung 1
+a bundle of four.
 
 ## Reading the results
 
@@ -188,4 +241,6 @@ session ran. Do not fold them into the main counts.
 
 After the runs, re-run the analysis package (`19-Analysis/paper-llm/code/`) —
 `results_within.py` for the truncation test, `results_reachability.py` for the concession
-decomposition, `inventory.py` for the counts.
+decomposition, `inventory.py` for the counts. The ladder waves add two run groups it does
+not know about (`runs/ladder2/`, `runs/ladder3/`) and one violation reason
+(`truncated_note`, which unlike `empty_note` keeps the note).

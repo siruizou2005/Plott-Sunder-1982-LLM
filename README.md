@@ -394,6 +394,9 @@ Binding on every prompt, and guarded for every (market, seat) pair in
    clue to be described as **two boxes of chips** rather than as a likelihood.
 2. **Nothing is disclosed** about how many investor types exist, what anyone else's
    dividends are, whether the informed agents stay the same, or how likely a state is.
+   This is the baseline, and the bottom rung of a flag-gated **disclosure ladder**
+   ([docs/disclosure-treatment.md](docs/disclosure-treatment.md)) whose three flags all
+   default off. No rung discloses **which** investors hold the cards.
 3. **Common knowledge is per-market.** The paper notes that agents could deduce "in all but
    market 1" that dividends stay constant across periods — so market 1 is not told.
 
@@ -448,18 +451,20 @@ a published experiment, and these vary something the experiment did not have:
 MARKETS=-m7 ./run_control_arm.sh                 # one market's three
 ```
 
-A third group of sixteen sessions is designed but **not yet run**, in four waves — six
-at six rounds per period (truncation), four on the stopped baselines (the sag benchmark),
-three more control seeds (sell-side sample), and three with the type structure disclosed
-in every prompt (the common-knowledge deficit). ≈ $48 over ~38 hours. One wave at a time:
-sessions × W is a structural ceiling against the endpoint, and all sixteen at once would
-put 192 requests against a tolerated 50–80.
+A third group of twenty-four sessions runs in six waves. **Sixteen have run** — six at six
+rounds per period (truncation), four on the stopped baselines (the sag benchmark), three
+more control seeds (sell-side sample), and three with the type structure disclosed in every
+prompt (the common-knowledge deficit). **Eight are designed and not yet run**: `ladder2`
+and `ladder3`, the two rungs above `disclosed` on the
+[disclosure ladder](docs/disclosure-treatment.md), ≈ $21 over ~16 hours. One wave at a
+time: sessions × W is a structural ceiling against the endpoint, and the two ladder waves
+together would put 96 requests against a tolerated 50–80.
 
 ```bash
-./.venv/bin/python batch_plan.py --proposed      # all four waves
-DRY=1 ./run_proposed.sh rounds                   # print a wave, launch nothing
-./run_proposed.sh rounds                         # then stopped, sellside, disclosed
-./resume_proposed.sh rounds                      # after an interruption
+./.venv/bin/python batch_plan.py --proposed      # all six waves
+DRY=1 ./run_proposed.sh ladder2                  # print a wave, launch nothing
+./run_proposed.sh ladder2                        # then ladder3
+./resume_proposed.sh ladder2                     # after an interruption
 ```
 
 Each arm's threat, design and measured cost is in
