@@ -214,25 +214,38 @@ class Engine:
     def _visible_log(self) -> list[dict]:
         return [dict(e) for e in self.market_log]
 
-    def _notes_for(self, seat: str) -> list[dict]:
+    def _notes_for(self, seat: str, all_trades_this_period: bool = False) -> list[dict]:
         """The notes carried into a prompt: the two kinds windowed SEPARATELY.
 
         Under one shared window the post-trade notes crowd out the year-end reflection —
         measured at 3.4 trade notes per seat per period at three rounds, against a window
         of three — and §8 calls that reflection the design's main learning node.
+
+        `all_trades_this_period` drops the trade window for the YEAR-END call only. On a
+        turn, the window is right: three recent jottings are context for the decision in
+        front of you. At the year end the task is different — the agent is summarising the
+        year, and a window of three silently hides most of what happened in it. Measured at
+        three rounds a seat writes 3.4 trade notes a period and up to 14, so the summary
+        was being written from the tail of its own year.
         """
         notes = self.state[seat].reflections
         year_end = _last(([n for n in notes if n["kind"] == "period_end"]),
                          self.rules.period_end_notes)
-        trades = _last(([n for n in notes if n["kind"] != "period_end"]),
-                       self.rules.trade_notes)
+        trade_notes = [n for n in notes if n["kind"] != "period_end"]
+        trades = ([n for n in trade_notes if n["period"] == self.period]
+                  if all_trades_this_period else _last(trade_notes, self.rules.trade_notes))
         keep = {id(n) for n in year_end} | {id(n) for n in trades}
         return [n for n in notes if id(n) in keep]      # chronological, as written
 
-    def _memory(self, seat: str) -> dict:
-        """Private memory, identical for every kind of call this seat receives."""
+    def _memory(self, seat: str, all_trades_this_period: bool = False) -> dict:
+        """Private memory, identical for every kind of call this seat receives.
+
+        The one exception is the year-end call, which passes all_trades_this_period —
+        see _notes_for.
+        """
         st = self.state[seat]
-        return {"reflections": self._notes_for(seat), "history": list(st.history),
+        return {"reflections": self._notes_for(seat, all_trades_this_period),
+                "history": list(st.history),
                 "not_selected": _last(st.not_selected, self.rules.not_selected_window)}
 
     def _turn_ctx(self, seat: str, round_no: int, turn_seq: int) -> TurnContext:
@@ -692,8 +705,13 @@ class Engine:
             user = build_period_end_brief(
                 market=self.mkt, seat=seat, period=period, state=theta, certs=r["certs"],
                 cash=st.holding.cash, dividend_paid=r["dividend"], profit=r["profit"],
+                info=self.info, card=self.cards[seat],
                 market_log=vlog, names=self.names, rules=self.rules,
-                **self._memory(seat))
+                # Both year-end additions — the card, and every trade note from the year
+                # rather than the last three — ride with the memo style, so the note
+                # style's prompts stay exactly what the completed sessions were sent.
+                **self._memory(seat,
+                               all_trades_this_period=self.rules.period_end_style == "memo"))
             try:
                 return seat, agent.reflect("period_end", agent.reflect_system_text, user)
             except Exception as e:  # noqa: BLE001

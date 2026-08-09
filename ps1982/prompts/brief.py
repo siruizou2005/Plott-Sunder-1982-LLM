@@ -392,8 +392,22 @@ def build_trade_feedback_brief(*, market, seat: str, period: int, round_no: int,
 def build_period_end_brief(*, market, seat: str, period: int, state: str, certs: int, cash: int,
                            dividend_paid: int, profit: int, reflections: list[dict],
                            history: list[dict], market_log: list[dict],
-                           not_selected: list[dict], names: Names,
-                           rules: Rules) -> str:
+                           not_selected: list[dict], names: Names, rules: Rules,
+                           info: str = "none", card: str | None = None) -> str:
+    """The year-end brief, from which the note or the memo is written.
+
+    It carries the year's clue card. That looks redundant — the year is over and the
+    realized dividend is stated two lines above — but the card is the difference between
+    "the price told me X" and "my own card told me X", and an agent writing its durable
+    record cannot tell those apart without it. The only trace otherwise is its own trade
+    notes, which are written while the card IS visible; a seat that did not trade that year
+    had no record of its own information at all.
+
+    Under the memo style this matters more, because the memo is the seat's entire long-term
+    memory rather than one note among several — so the card is shown there. The note style
+    is left byte-identical: those prompts are what the completed sessions were sent.
+    """
+    memo = rules.period_end_style == "memo"
     blocks = [
         f"== MARKET YEAR {period} HAS ENDED ==\n"
         f"  The {state}-dividend was paid.\n"
@@ -402,6 +416,7 @@ def build_period_end_brief(*, market, seat: str, period: int, state: str, certs:
         f"  After the fixed cost of {FIXED_COST:,} francs, your profit for the year was "
         f"{profit:+,} francs.",
         _identity(seat, certs, cash, market=market, period=period, names=names, with_cost=False),
+        *([_clue_line(card, info, rules, market)] if memo else []),
         render_market_log(market_log, rules.market_log_window, names),
         *_memory_blocks(reflections=reflections, history=history,
                         not_selected=not_selected, names=names,

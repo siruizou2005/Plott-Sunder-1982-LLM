@@ -898,17 +898,43 @@ def test_clue_certainty_is_rejected_on_the_imperfect_market():
 # positive half — what the memo style says, and where.
 
 MEMO = Rules(period_end_style="memo", period_end_notes=1)
+# What the ten ladder scenarios actually run: tier 2's disclosure with the memo on top.
+TIER2_MEMO = Rules(disclose_structure=True, disclose_card_years=True,
+                   objective_profit_max=True, clue_is_certain=True,
+                   period_end_style="memo", period_end_notes=1)
 MEMO_HEADER = "== YOUR MEMO =="
 NOTES_HEADER = "== YOUR NOTES FROM PAST YEAR-ENDS =="
 ONE_NOTE = [{"kind": "period_end", "period": 4, "round": 0, "at": None,
              "text": "What I know so far: the price sits near 260 unless someone buys hard."}]
 
 
-def _period_end(rules=RULES, market=M3, reflections=()):
+def _period_end(rules=RULES, market=M3, reflections=(), info="none", card=None):
     return build_period_end_brief(
         market=market, seat="S01", period=5, state=market.states[0], certs=2, cash=10_000,
         dividend_paid=500, profit=100, reflections=list(reflections), history=[],
-        market_log=[], not_selected=[], names=NAMES, rules=rules)
+        market_log=[], not_selected=[], names=NAMES, rules=rules, info=info, card=card)
+
+
+def test_memo_year_end_brief_shows_the_year_s_clue_card():
+    """An agent writing its durable record has to be able to tell "the price told me X"
+    from "my own card told me X", and without the card it cannot. The only other trace is
+    its own trade notes, which are written while the card is visible — so a seat that did
+    not trade that year had no record of its own information at all.
+
+    Note style stays byte-identical: those prompts are what the completed sessions were
+    sent, and the digests at the top of this file hold them there.
+    """
+    on = _period_end(rules=MEMO, reflections=ONE_NOTE, info="insider", card="Y")
+    off = _period_end(rules=RULES, reflections=ONE_NOTE, info="insider", card="Y")
+    assert "== YOUR CLUE CARD THIS YEAR ==" in on
+    assert "Your clue card carries the letter Y" in on
+    assert "CLUE CARD" not in off
+
+    # A blank card is the informative case under tier 2, and it still renders.
+    blank = _flat(_period_end(rules=TIER2_MEMO, reflections=ONE_NOTE,
+                              info="insider", card=None, market=MARKETS[4]))
+    assert "Your clue card is BLANK" in blank
+    assert "This year lettered clue cards have been handed out." in blank
 
 
 def test_memo_replaces_the_hundred_word_ask_with_a_rewrite():

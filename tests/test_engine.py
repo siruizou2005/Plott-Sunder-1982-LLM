@@ -443,6 +443,23 @@ def test_the_two_kinds_of_note_are_windowed_separately(engine_factory):
     got = eng._notes_for("S01")
     assert [n["text"] for n in got if n["kind"] == "period_end"] == ["year 4"]
 
+    # The year-end call takes ALL of this period's trade notes instead of the window. On a
+    # turn, three recent jottings are context for the decision in front of you; at the year
+    # end the agent is summarising the year, and a window of three hides most of it — a
+    # seat writes 3.4 trade notes a period at three rounds, and up to 14.
+    eng.period = 4
+    eng.rules.period_end_notes, eng.rules.trade_notes = 1, 3
+    got = eng._notes_for("S01", all_trades_this_period=True)
+    assert [n["text"] for n in got if n["kind"] != "period_end"] == \
+        ["trade 4.1", "trade 4.2", "trade 4.3"]
+    assert [n["text"] for n in got if n["kind"] == "period_end"] == ["year 4"]
+    # Only THIS period's, not every trade note ever written.
+    eng.period = 2
+    got = eng._notes_for("S01", all_trades_this_period=True)
+    assert [n["text"] for n in got if n["kind"] != "period_end"] == \
+        ["trade 2.1", "trade 2.2", "trade 2.3"]
+    eng.period = 4
+
     # And the two budgets are genuinely independent. Zero means NONE: `items[-0:]` is the
     # obvious spelling and returns everything, so a memory-ablation arm asking for no
     # trade notes would have received all twelve of them.
