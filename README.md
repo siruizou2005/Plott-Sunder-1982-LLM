@@ -462,9 +462,10 @@ structural ceiling against the endpoint, and the three together would put 120 re
 against a tolerated 50–80.
 
 ```bash
-./.venv/bin/python batch_plan.py --proposed      # all six waves
+./.venv/bin/python batch_plan.py --proposed      # all seven waves
 DRY=1 ./run_proposed.sh ladder2                  # print a wave, launch nothing
-./run_proposed.sh ladder2                        # then ladder3
+./run_proposed.sh ladder1b && ./run_proposed.sh ladder2   # waves may overlap
+SERIAL=1 ./run_proposed.sh ladder3               # refuse if another wave is running
 ./resume_proposed.sh ladder2                     # after an interruption
 ```
 

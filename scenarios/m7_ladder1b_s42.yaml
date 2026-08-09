@@ -32,7 +32,8 @@ sequence_preset: random_prior
 market: 7
 sessions: 1
 max_rounds_per_period: 3
-# Two sessions x 12 workers = 24 in flight, well inside Bailian's tolerated 50-80.
+# Two sessions x 12 workers = 24 in flight at the ceiling; run together with the other
+# ladder waves, ten sessions and a ceiling of 120, at zero retries.
 broadcast_workers: 12
 
 rules:

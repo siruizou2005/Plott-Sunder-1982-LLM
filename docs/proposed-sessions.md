@@ -9,10 +9,11 @@ from the reported sessions, not estimated.
 check rather than read: for each scenario in a wave, take its `run_name` and read `status`
 out of `runs/<run_name>/*.meta.json`.
 
-Seven waves, one arm each, run **one wave at a time**. A session holds at most
-`broadcast_workers` requests in flight, so sessions × W is a structural ceiling against
-Bailian's tolerated 50–80: the waves are 72, 48, 36, 36, 48, 48 and 24, and the three unrun ones
-together would be 120. W stays at 12 in every file because the 26 sessions these arms are
+Seven waves, one arm each. A wave is an ARM, not a scheduling unit — they may run
+together, and the ten ladder sessions did. A session holds at most `broadcast_workers`
+requests in flight, so sessions × W is still a structural ceiling: the waves are 72, 48,
+36, 36, 48, 48 and 24, and the three ladder waves together are 120, which ran at zero
+retries. W stays at 12 in every file because the 26 sessions these arms are
 read against all ran at 12.
 
 ```
@@ -224,8 +225,8 @@ the full four-rung ladder exists there and nowhere else.
 completed sessions on those exact draws ($2.54–$2.87, and seeds 44/45 are the pricier ones
 because they provoke more trading); the memo adds ~16%, almost all of it on the input side
 — notes ride in the user message, which no prefix cache covers, and the memo is in ~96% of
-turn and broadcast prompts. 4 × 12 = 48 in flight; both waves at once would be 96, past the
-ceiling.
+turn and broadcast prompts. 4 × 12 = 48 in flight per wave; all three ladder waves ran together at a
+ceiling of 120.
 
 ## Reading the results
 

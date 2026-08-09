@@ -48,8 +48,8 @@ sequence_preset: random_prior
 market: 7
 sessions: 1
 max_rounds_per_period: 3
-# This wave is four sessions x 12 workers = 48 in flight, inside Bailian's tolerated
-# 50-80. The two ladder waves run SEPARATELY: all eight at once would be 96, past it.
+# Four sessions x 12 workers = 48 in flight at the ceiling. Waves are not staged for the
+# endpoint's sake: all ten ladder sessions ran together, a ceiling of 120, at zero retries.
 broadcast_workers: 12
 
 rules:

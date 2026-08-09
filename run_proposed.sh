@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The proposed arms, one wave at a time.
+# The proposed arms. Waves are arms, not scheduling units -- they may run together.
 #
 #   ./run_proposed.sh rounds        # 6 sessions, ~13-15h, ~$23   truncation
 #   ./run_proposed.sh stopped       # 4 sessions, ~7-8h,  ~$10    uninformed resting level
@@ -9,13 +9,19 @@
 #   ./run_proposed.sh ladder3       # 4 sessions, ~8h,    ~$15    ladder tier 3
 #   ./run_proposed.sh ladder1b      # 2 sessions, ~8h,    ~$7.3   decomposes tier 2
 #   DRY=1 ./run_proposed.sh rounds  # print the plan, launch nothing
+#   SERIAL=1 ./run_proposed.sh ladder2   # refuse if another wave is running
 #   ./run_proposed.sh stopped m94_stopped   # just these scenarios from the wave
 #
-# ONE WAVE AT A TIME, and the constraint is the endpoint rather than the box. A session
-# drives its phases on one thread, so at most `broadcast_workers` of its requests are in
-# flight at any instant and sessions x W is a structural ceiling against Bailian's
-# tolerated 50-80. The waves are 72, 48, 36, 36, 48, 48 and 24. The three unrun waves at
-# once would be 120. W
+# WAVES MAY RUN TOGETHER. A session drives its phases on one thread, so at most
+# `broadcast_workers` of its requests are in flight at any instant, and sessions x W is a
+# structural ceiling rather than a statistical hope. That arithmetic is unchanged; what
+# changed is the number it is measured against.
+#
+# The old figure was "Bailian tolerates 50-80", and it was inferred from waves that never
+# exceeded 72 rather than from a limit anyone hit. Ten sessions have since run together at
+# W=12 -- a ceiling of 120, mean in flight ~19 -- with ZERO retries and zero api_error over
+# the run. The endpoint is not the binding constraint at this scale, so the script no
+# longer serialises waves by default. W
 # stays at 12 in every scenario file because the 26 sessions these arms are read against
 # all ran at 12; lowering it here would put a throughput difference between an arm and its
 # own comparison. The script refuses to start a wave while another one is running, for the
@@ -50,37 +56,39 @@ while IFS= read -r line; do ROWS="$ROWS$line"$'\n'; done \
     < <("$PY" batch_plan.py --proposed "$WAVE") || exit 1
 [ -z "${ROWS// /}" ] && { echo "no sessions in wave $WAVE" >&2; exit 1; }
 
-# A wave already in flight is the one thing that breaks the ceiling, so refuse rather than
-# add to it. Match the launched command line, not a bare pattern: `pgrep -f ps1982` also
-# matches this script and the check itself.
+# Adding a wave to one already in flight is allowed and is the default. What protects the
+# run is not serialisation but the client: transient rejections -- 429 and the 408/409/5xx
+# family, plus the SDK's rate-limit, timeout and connection errors -- retry with
+# exponential backoff and FULL JITTER (`llm/base.py:_jittered`, base 2.0, 5 attempts,
+# windows sampled uniformly over 2/4/8/16/32s), on top of a 0.25s pace before every
+# request. Overload becomes latency rather than failure.
 #
-# FORCE=1 overrides, and there is a real case for it. The provider client retries transient
-# rejections -- 429 and the 408/409/5xx family, plus the SDK's rate-limit, timeout and
-# connection errors -- with exponential backoff and FULL JITTER (`llm/base.py:_jittered`,
-# base 2.0, 5 attempts, windows sampled uniformly over 2/4/8/16/32s), on top of a 0.25s
-# pace before every request. That turns overload into latency instead of failure, which is
-# what makes running all three waves at once viable at all.
+# It does not become capacity. Past five retries the call returns `api_error: true`, and
+# that is CONTAMINATION rather than model behaviour: the model never answered, so the
+# skipped turn was not the agent's choice. Vertex has done exactly this -- 54 retries in
+# 75 calls and 5 corrupted turns at W=12 -- so the provider matters, and Bailian's headroom
+# is not Vertex's.
 #
-# What it does NOT do is raise the endpoint's capacity. Past five retries the call returns
-# `api_error: true`, and that is CONTAMINATION rather than model behaviour: the model never
-# answered, so the skipped turn was not the agent's choice. Vertex has done exactly this
-# here -- 54 retries in 75 calls and 5 corrupted turns at W=12. So when forcing, watch the
-# retry counts rather than only the error counts:
+# So WATCH THE RETRIES, not the error counts. Retries climb first; errors appear only once
+# the damage is already in the log:
 #
 #   grep -o '"retries":[0-9]*' runs/<group>/<run>/*.jsonl | sort | uniq -c
 #
-# and pull a wave if they climb. The default stays refuse, because the ceiling arithmetic
-# in the scenario files is only true one wave at a time.
-FORCE=${FORCE:-0}
-running=$(ps -eo args= | grep -c '^[^ ]*\.venv/bin/python -m ps1982 run' || true)
-if [ "$running" -gt 0 ] && [ "$DRY" = "0" ] && [ "$FORCE" = "0" ]; then
-  echo "REFUSING: $running ps1982 session(s) already running." >&2
+# and pull a wave if they climb. SERIAL=1 restores the old refusal for a provider with less
+# headroom, or for a deliberately paced run.
+#
+# The count matches the MODULE, not the interpreter: a pattern anchored on .venv/bin/python
+# matches nothing on macOS, where the venv resolves to the framework binary before ps sees
+# it -- it once reported zero sessions while a session was running.
+SERIAL=${SERIAL:-0}
+running=$(ps -eo args= | grep -c -- '-m ps1982 run' || true)
+if [ "$running" -gt 0 ] && [ "$DRY" = "0" ] && [ "$SERIAL" != "0" ]; then
+  echo "REFUSING (SERIAL=1): $running ps1982 session(s) already running." >&2
   echo "  ps -eo pid,stat,args | grep '[p]s1982 run'" >&2
-  echo "  FORCE=1 to add this wave anyway — see the comment in this script first." >&2
   exit 1
 fi
-if [ "$running" -gt 0 ] && [ "$FORCE" != "0" ]; then
-  echo "FORCED: adding this wave to $running session(s) already running." >&2
+if [ "$running" -gt 0 ] && [ "$DRY" = "0" ]; then
+  echo "adding this wave to $running session(s) already running; watch the retry counts." >&2
 fi
 
 WANT=" $* "

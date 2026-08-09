@@ -124,9 +124,9 @@ def control_arm(markets: tuple[int, ...] = CONTROL_ARM_MARKETS):
 
 # ---------------------------------------------------------------- the proposed arms
 #
-# Twenty-four sessions in six waves, written for the LLM-agent paper. Each wave is one arm
+# Twenty-six sessions in seven waves, written for the LLM-agent paper. Each wave is one arm
 # and answers one threat; docs/proposed-sessions.md states which. The first four waves have
-# run and the two ladder waves have not — but do not take that from a comment: read
+# run and the three ladder waves have not — but do not take that from a comment: read
 # `status` out of runs/<run_name>/*.meta.json, which is the only source that cannot go
 # stale. Prose here has been wrong in both directions. They are NOT folded into
 # plan() for the same reason the control and rounds arms are not: those 26 sessions are the
@@ -138,11 +138,12 @@ def control_arm(markets: tuple[int, ...] = CONTROL_ARM_MARKETS):
 # stop period) that has to be readable in the file that sets it. This table therefore
 # carries the wave membership and nothing else, and the launcher reads names from it.
 #
-# Waves exist because of the endpoint, not the science. A session holds at most
-# `broadcast_workers` requests in flight, so sessions x W is a structural ceiling against
-# Bailian's tolerated 50-80: the rounds arm alone is 6 x 12 = 72, and all twenty-one
-# unrun sessions at once would be 252. W stays at 12 in every file because the 26 sessions
-# these are read against all ran at 12.
+# Waves are ARMS, not scheduling units. Each answers one threat and is read as one
+# comparison; they are not staged to protect the endpoint, and they may run together. A
+# session holds at most `broadcast_workers` requests in flight, so sessions x W is still a
+# structural ceiling -- ten sessions ran concurrently at W=12, a ceiling of 120, with zero
+# retries. W stays at 12 in every file because the 26 sessions these are read against all
+# ran at 12.
 PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
     # Truncation. Six rounds per period on the six seeds the control arm already ran, so
     # the comparison is paired period by period. ~13h and ~$3.9 a session, measured on the
@@ -175,9 +176,9 @@ PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
     # seeds pool to 9 buy / 9 sell on each market; the scenario headers state why choosing
     # them on that is blocking rather than sample selection.
     #
-    # 4 x 12 = 48 in flight per wave; all eight at once would be 96, past the ceiling,
-    # which is why this is two waves and not one. ~$10.5 and ~8 h each, from the tier-1
-    # sessions' measured 4,269-4,545 calls and $2.47-$2.81.
+    # 4 x 12 = 48 in flight per wave. Two waves rather than one because they are two
+    # rungs of the ladder, not because of the endpoint -- both ran together with ladder1b,
+    # 10 sessions and a ceiling of 120, at zero retries. ~$15 and ~8 h each.
     "ladder2": ("m7_ladder2_s42", "m7_ladder2_s45",
                 "m8_ladder2_s42", "m8_ladder2_s44"),
     "ladder3": ("m7_ladder3_s42", "m7_ladder3_s45",
@@ -186,8 +187,7 @@ PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
     # passengers (objective, certainty, memo) and NOT disclose_card_years, on the seed
     # both markets already have a tier-1 session on. It turns one four-dial step into two
     # single-dial ones: tier1 -> 1b isolates the passengers, 1b -> tier2 isolates the
-    # card-year rung. 2 x 12 = 24 in flight, so it can run beside nothing or after either
-    # ladder wave. ~$7.3.
+    # card-year rung. 2 x 12 = 24 in flight. ~$7.3.
     "ladder1b": ("m7_ladder1b_s42", "m8_ladder1b_s42"),
 }
 

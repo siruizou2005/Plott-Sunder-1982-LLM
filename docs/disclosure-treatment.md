@@ -259,9 +259,9 @@ which is what makes the full four-rung ladder exist anywhere.
 
 ## Cost
 
-~**$12.7 a wave, ~$25 for both**, and ~8 h per wave in parallel (48 requests in flight at
-ceiling; both waves at once would be 96, past it, so they run separately and the wall clock
-is ~16 h).
+~**$12.7 a wave, ~$25 for both**, and ~8 h per wave (48 requests in flight at the ceiling). The waves may run
+together and did — all ten ladder sessions at once, a ceiling of 120, zero retries — so the
+wall clock for the whole ladder is ~8 h rather than ~24.
 
 The per-seed base is the measured cost of the completed session on that exact draw — same
 seed, same fourteen states, so the same amount of trading to pay for:
