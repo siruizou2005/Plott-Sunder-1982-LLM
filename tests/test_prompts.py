@@ -655,3 +655,134 @@ def test_disclosure_rejects_markets_with_all_periods(number):
         Config(market=number, rules={"disclose_structure": True})
     Config(market=number)                                    # baseline still loads
     Config(market=4, rules={"disclose_structure": True})     # the treatment markets do too
+
+
+# ------------------------------------------------------------- the ladder: tiers 2 and 3
+#
+# Tier 2 adds the per-year card announcement, tier 3 adds that the card holders do not
+# change. Both are gated behind disclose_structure, so these guards are the tier-1 guards
+# above with one more fact each — and the digests at the top of this file are what proves
+# the rungs below them did not move.
+
+TIER2 = Rules(disclose_structure=True, disclose_card_years=True,
+              objective_profit_max=True, clue_is_certain=True)
+TIER3 = Rules(disclose_structure=True, disclose_card_years=True,
+              disclose_insiders_fixed=True, objective_profit_max=True,
+              clue_is_certain=True)
+TIERS = [("tier2", TIER2), ("tier3", TIER3)]
+TIER_SEATS = [(m, s, n, r) for m in DISC_MARKETS for s in m.seats for n, r in TIERS]
+OBJECTIVE_HEADER = "== YOUR OBJECTIVE =="
+
+
+def _section(market, rules):
+    """The disclosure section only, cut out of the turn prompt."""
+    text = system_prompt(market.seats[0], rules, market)
+    return text[text.index(DISC_HEADER):text.index("== WHAT EVERY INVESTOR KNOWS ==")]
+
+
+@pytest.mark.parametrize("market", DISC_MARKETS, ids=lambda m: f"m{m.number}")
+def test_each_rung_adds_exactly_one_fact(market):
+    """The three rungs differ in two sentences and nothing else: whether the holders are
+    said to be the same investors, and whether the card years are said to be announced."""
+    one, two, three = (_section(market, r) for r in (DISC, TIER2, TIER3))
+
+    # Fixedness: withheld on tiers 1 and 2, stated on tier 3 — and never as identities.
+    for s in (one, two):
+        assert "or whether they are the same investors" in s
+        assert "they are the same investors in" not in s
+    assert "or whether they are the same investors" not in three
+    assert "they are the same investors in" in three
+
+    # Card years: withheld on tier 1, announced on tiers 2 and 3.
+    assert "no one is told which years are which" in one
+    for s in (two, three):
+        assert "no one is told which years are which" not in s
+        assert "you are told whether clue cards that are not blank" in s
+
+
+@pytest.mark.parametrize("market", DISC_MARKETS, ids=lambda m: f"m{m.number}")
+@pytest.mark.parametrize("name,rules", TIERS, ids=[n for n, _ in TIERS])
+def test_higher_rungs_state_no_new_digits(market, name, rules):
+    """The mirror of the tier-1 digit guard on the rungs above it. The only digits the
+    section may contain are the dividend values, so a leaked period number, informed count
+    or schedule shows up as a failing integer."""
+    values = {str(v) for d in market.dividends.values() for v in d.values()}
+    assert set(re.findall(r"\d+", _section(market, rules))) == values
+
+
+@pytest.mark.parametrize("market,seat,name,rules", TIER_SEATS,
+                         ids=[f"m{m.number}-{s}-{n}" for m, s, n, _ in TIER_SEATS])
+def test_higher_rungs_keep_forbidden_vocabulary_out(market, seat, name, rules):
+    """The ladder discloses structure, not vocabulary. Same lists as the tier-1 guard,
+    over all three prompt kinds."""
+    # Named, because the seat-id assertion below is only meaningful when a name is
+    # supplied — `seat` is the fallback the builders print when it is not.
+    text = "\n".join([system_prompt(seat, rules, market, NAMES[seat]),
+                      broadcast_system_prompt(seat, rules, market, NAMES[seat]),
+                      reflect_system_prompt(seat, rules, market, NAMES[seat])])
+    lowered = text.lower()
+    for word in ("probability", "probabilities", "probable", "likelihood",
+                 "expected value", "bayes", "chance", "odds", "random sample",
+                 "rational expectation", "equilibrium", "prior information model",
+                 "insider", "efficiency"):
+        assert word not in lowered, f"m{market.number} {seat} {name} contains {word!r}"
+    for token in ("0.4", "0.6", "40%", "60%", "16/40", "24/40"):
+        assert token not in text, f"m{market.number} {name} states the prior as {token!r}"
+    for s in market.seats:
+        assert s not in text, f"m{market.number} {name} names seat {s}"
+
+
+@pytest.mark.parametrize("market", DISC_MARKETS, ids=lambda m: f"m{m.number}")
+def test_fixedness_disclosure_matches_the_engine(market):
+    """The tier-3 sentence says the card holders are the same investors every card year.
+    This is the test that keeps it from being a lie: the engine's own card dealing must
+    hand the letters to the same seats in every insider period, whatever the state."""
+    seen = set()
+    for period, info in enumerate(market.sequence_info, start=1):
+        if info != "insider":
+            continue
+        for state in market.states:
+            cards = market.clue_cards(info, state)
+            seen.add(frozenset(s for s, c in cards.items() if c is not None))
+    assert len(seen) == 1, f"market {market.number} deals letters to different seats"
+    assert seen.pop() == set(market.insiders)
+
+
+@pytest.mark.parametrize("flag", ["disclose_card_years", "disclose_insiders_fixed"])
+def test_higher_rungs_require_the_structure(flag):
+    """Both rungs write into the section disclose_structure creates. Without it there is
+    no section, so the flag would either do nothing or state a fact never introduced."""
+    with pytest.raises(ValueError, match="disclose_structure"):
+        Config(market=4, rules={flag: True})
+    Config(market=4, rules={flag: True, "disclose_structure": True})
+
+
+@pytest.mark.parametrize("number", [1, 2, 3, 6, 92])
+def test_higher_rungs_inherit_the_all_period_rejection(number):
+    """Requiring disclose_structure means the 'all'-period rejection covers the ladder
+    without a second check."""
+    with pytest.raises(ValueError, match="disclose_structure"):
+        Config(market=number, rules={"disclose_structure": True,
+                                     "disclose_card_years": True})
+
+
+def test_card_years_refuses_an_explicit_silence():
+    """announce_no_info_period: false asks for silence in the very direction
+    disclose_card_years announces. There is no right answer, and the winner would be
+    invisible in the log."""
+    with pytest.raises(ValueError, match="announce_no_info_period"):
+        Config(market=4, rules={"disclose_structure": True, "disclose_card_years": True,
+                                "announce_no_info_period": False})
+    # Unset is the supported way to write it, and true is merely redundant.
+    Config(market=4, rules={"disclose_structure": True, "disclose_card_years": True})
+    Config(market=4, rules={"disclose_structure": True, "disclose_card_years": True,
+                            "announce_no_info_period": True})
+
+
+def test_clue_certainty_is_rejected_on_the_imperfect_market():
+    """Market 1's card is a row of marks either box can produce. "Never wrong" would be
+    false there, and it would hand that market's agents the one thing it withholds."""
+    with pytest.raises(ValueError, match="clue_is_certain"):
+        Config(market=1, rules={"clue_is_certain": True})
+    Config(market=1)                                       # baseline still loads
+    Config(market=4, rules={"clue_is_certain": True})      # the lettered markets do too

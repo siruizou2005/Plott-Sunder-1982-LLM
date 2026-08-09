@@ -54,6 +54,56 @@ class Rules(BaseModel):
     # Config._check rejects the combination.
     disclose_structure: bool = False
 
+    # --- the disclosure ladder, tiers 2 and 3 (docs/disclosure-treatment.md).
+    #
+    # Both sit ON TOP of disclose_structure and Config._check refuses them without it, so
+    # the treatment is a LADDER rather than a lattice: tier 1 is disclose_structure alone,
+    # tier 2 adds disclose_card_years, tier 3 adds disclose_insiders_fixed. Every field
+    # here defaults to False, so the baseline and the three completed tier-1 sessions
+    # render byte-identical prompts — which prefix caching and every paired comparison
+    # depend on, and tests/test_prompts.py's digests enforce.
+    #
+    # What stays hidden at EVERY rung: which investors hold the cards. Identities are not
+    # a rung of this ladder and there is no flag that discloses them.
+
+    # Tier 2. Whether each year is announced as one in which clue cards that are not blank
+    # were handed out — in BOTH directions, every year, in the same words for every seat,
+    # so an agent holding a letter learns nothing here that a blank-card holder does not.
+    # It also replaces the tier-1 section's closing sentence, which says such years are not
+    # announced and would become false.
+    #
+    # This SUBSUMES announce_no_info_period, which speaks only in the "none" direction: the
+    # two write the same sentence there and share one branch in brief.py, so no
+    # configuration can print it twice. An explicit announce_no_info_period: false beside
+    # this flag asks for silence and for an announcement at once, and Config._check refuses
+    # it rather than letting an invisible winner decide.
+    disclose_card_years: bool = False
+
+    # Tier 3. Whether the card holders are stated to be the same investors in every year
+    # cards are handed out. True of the engine rather than asserted: Market.insiders is the
+    # first `insiders_per_type` seats of each type block, derived from the roster, and
+    # neither the period nor `redrawn` moves it — engine.py already records it as
+    # "fixed_insiders" in period_start, and a test pins the wording to the engine.
+    disclose_insiders_fixed: bool = False
+
+    # An explicit objective, rendered as its own block of the SHARED preamble so that it
+    # reaches the turn, the broadcast and the reflection prompts alike. The baseline states
+    # its purpose only in _TURN_TASK ("You are free to make as much profit as you can"),
+    # which is the paper's own wording and therefore never reaches a broadcast reply or a
+    # year-end note — the two channels that between them carry 73% of all calls and all of
+    # the durable memory. That sentence stays; this adds to it rather than replacing it.
+    #
+    # Not gated on a market: it says nothing about the information design.
+    objective_profit_max: bool = False
+
+    # Emphatic certainty for a clue card that carries a letter. NOT a new fact — the
+    # instructions already say such a card "is always correct" and the year's card line
+    # already says the dividend WILL be paid. This strengthens the wording in both places
+    # and states nothing the baseline did not. Undefined for market 1, whose card is a
+    # ten-draw sample that either box can produce, so Config._check refuses it there and
+    # the imperfect-clue branch could not render it anyway.
+    clue_is_certain: bool = False
+
     # Elicit posterior / reservation prices / basis each turn. Off = the reactivity control
     # (design doc §6 ②): belief elicitation may itself change behaviour.
     elicit_beliefs: bool = True
@@ -191,6 +241,34 @@ class Config(BaseModel):
                 f"disclose_structure states that lettered clue cards go to two investors "
                 f"per type; market {self.market} has 'all' periods where every investor "
                 f"receives one, so the disclosure text would be false")
+        # The ladder is a ladder. Both higher rungs write into or refer to the section
+        # disclose_structure creates: without it, fixedness has no sentence to modify and
+        # the per-year announcement would report on a structure the instructions never
+        # introduced. This also makes tiers 2 and 3 inherit the 'all'-period rejection
+        # above for free.
+        for flag in ("disclose_card_years", "disclose_insiders_fixed"):
+            if getattr(self.rules, flag) and not self.rules.disclose_structure:
+                raise ValueError(
+                    f"{flag} is a higher rung of the disclosure ladder and writes into the "
+                    f"section disclose_structure creates; set disclose_structure: true as "
+                    f"well, or drop {flag}")
+        # disclose_card_years announces the card condition of every year, which includes
+        # the direction announce_no_info_period governs. Asking for silence and for an
+        # announcement at once has no right answer, and the winner would be invisible in
+        # the log — the class of bug runs/README.md records twice.
+        if self.rules.disclose_card_years and self.rules.announce_no_info_period is False:
+            raise ValueError(
+                "disclose_card_years announces the card condition of EVERY year, including "
+                "the years in which no lettered card is handed out; announce_no_info_period: "
+                "false contradicts it — leave announce_no_info_period unset")
+        # Market 1's clue is a ten-draw sample from one of two boxes of chips. Either box
+        # can produce any row, so "never wrong" would be false, and it would hand that
+        # market's agents the one thing it exists to withhold.
+        if self.rules.clue_is_certain and self.market_spec.imperfect:
+            raise ValueError(
+                f"clue_is_certain states that a clue card carrying a letter is never wrong; "
+                f"market {self.market}'s clue is a row of marks that either box can "
+                f"produce, so the wording would be false")
         return self
 
     @property
