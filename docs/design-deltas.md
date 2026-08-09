@@ -238,8 +238,8 @@ propensity to read the price nor the quality of the reading improves over a sess
 notes or without them.
 
 **What it is.** One standing document. At each year end the agent is shown its previous memo
-verbatim and writes the whole thing again, **about 600 words** (`Rules.memo_words`) with a
-stated ceiling of 1200 (`Rules.memo_max_words`). The new version **replaces** the old one,
+verbatim and writes the whole thing again, **about 600 words** (`Rules.memo_words`). The
+new version **replaces** the old one,
 and the prompt says so: *anything you leave out is gone, and you will not see it again.*
 That sentence is the mechanism. A memo that merely accumulated would be a longer note; a
 memo that replaces its predecessor forces the agent to decide each year what is still worth
@@ -249,8 +249,10 @@ carrying, which is what makes it continuous and what makes the length honest.
 "between 500 and 800 words" and `runs/probes/ladder2_smoke` (3 periods, 12 seats, 36 memos,
 exactly this configuration) shows what that produced: **median 1050 words, maximum 5168,
 19% inside the band.** The same model honours the note style's "about 100 words" to a median
-of 105. A single soft target is the phrasing that works; the ceiling is a separate sentence
-so the runaway tail has something explicit to hit.
+of 105. A single soft target is the phrasing this model follows, and the instruction
+carries exactly one number: `memo_max_words` sizes the token budget and never reaches a
+prompt, because putting a second number in front of the model is the thing the measurement
+argues against.
 
 **The rewrite is real.** In that same probe, 0 of 12 seats grew monotonically across the
 three years (medians 1082 → 1071 → 971). The memo is being rewritten, not appended to.

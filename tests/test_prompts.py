@@ -915,29 +915,37 @@ def test_memo_replaces_the_hundred_word_ask_with_a_rewrite():
     """The year-end ask is what tells a memo agent this is the rewrite occasion — the
     shared reflect system prompt describes both occasions and defers to this line.
 
-    "about N words", not a range. The range is what failed: measured on
-    runs/probes/ladder2_smoke, "between 500 and 800 words" returned a median of 1050 and a
-    maximum of 5168 with 19% in band, while the note style's "about 100 words" comes back
-    at a median of 105. The ceiling is a separate sentence so the tail has something to
-    hit.
+    "about N words", not a range, and exactly ONE number. The range is what failed:
+    measured on runs/probes/ladder2_smoke, "between 500 and 800 words" returned a median of
+    1050 and a maximum of 5168 with 19% in band, while the note style's "about 100 words"
+    comes back at a median of 105. memo_max_words sizes the token budget and never reaches
+    a prompt — putting a second number in front of the model is the thing the measurement
+    argues against.
     """
     memo = _flat(_period_end(rules=MEMO, reflections=ONE_NOTE))
     note = _flat(_period_end(rules=RULES, reflections=ONE_NOTE))
+    task = memo.split("The market year has ended.")[-1]
 
     assert "Write your memo out again in full, about 600 words" in memo
-    assert "Do not go beyond 1200 words" in memo
     assert "this replaces it completely" in memo
     assert "about 100 words" not in memo
-    assert "between" not in memo.split("The market year has ended.")[-1]
+    assert "between" not in task
+    # One number in the whole instruction, and it is the target.
+    assert re.findall(r"\d+", task) == ["600"]
+    assert "1200" not in memo
 
     assert "Write a note to yourself of about 100 words" in note
     assert "replaces it completely" not in note
 
-    # Both numbers come from Rules, not from the sentence.
+    # The target comes from Rules; the ceiling stays out of the text whatever it is set to.
+    # Assert on the task sentence alone — the brief legitimately quotes other numbers, and
+    # the dividend paid is one of them.
     other = _flat(_period_end(rules=Rules(period_end_style="memo", period_end_notes=1,
                                           memo_words=300, memo_max_words=500),
                               reflections=ONE_NOTE))
-    assert "about 300 words" in other and "Do not go beyond 500 words" in other
+    other_task = other.split("The market year has ended.")[-1]
+    assert "about 300 words" in other_task
+    assert re.findall(r"\d+", other_task) == ["300"]
 
 
 def test_memo_is_carried_into_every_kind_of_call():
@@ -1049,8 +1057,8 @@ def test_memo_requires_a_window_of_one():
 def test_memo_requires_a_reflect_budget_that_can_hold_it():
     """Reasoning shares the reflect budget, so the cap has to hold both.
 
-    The floor is derived from the stated ceiling rather than fixed: a memo at
-    memo_max_words, still intact when reasoning has its worst measured run. Both constants
+    The floor is derived from memo_max_words rather than fixed: a memo at that length,
+    still intact when reasoning has its worst measured run. Both constants
     come from runs/probes/ladder2_smoke — 1.25 body tokens per word, reasoning median
     1,800 and max 7,450 — so 1200 words needs 1500 + 7500 = 9000.
     """

@@ -423,11 +423,13 @@ def _period_end_task(rules: Rules) -> str:
     """The year-end instruction, which is also what tells a memo-style agent that this is
     the rewrite occasion rather than the post-trade one.
 
-    "about N words" rather than a range, because the range is what failed. Measured on
-    runs/probes/ladder2_smoke: asked for "between 500 and 800 words" the model returned a
-    median of 1050 and a maximum of 5168, with 19% inside the band — while the note
-    style's "about 100 words" comes back at a median of 105. The ceiling is stated as a
-    second, separate sentence so the tail has something explicit to hit.
+    "about N words" and nothing else — one length, stated once. The range is what failed:
+    measured on runs/probes/ladder2_smoke, "between 500 and 800 words" returned a median of
+    1050 and a maximum of 5168, with 19% inside the band, while the note style's "about 100
+    words" comes back at a median of 105. A single soft target is the phrasing this model
+    follows, and a second sentence naming a ceiling would put two numbers back in front of
+    it. `Rules.memo_max_words` is therefore a budget-sizing parameter only; it never
+    reaches a prompt.
     """
     if rules.period_end_style != "memo":
         return _YEAR_END_NOTE_TASK
@@ -437,6 +439,4 @@ def _period_end_task(rules: Rules) -> str:
         f"completely, so carry forward everything still worth knowing, revise what this "
         f"year changed, and drop what you now know to be wrong. Cover what you have worked "
         f"out about this market so far, what the prices have told you and where you read "
-        f"them wrongly, the rules you now trade by, and what you are still unsure of. "
-        f"Do not go beyond {rules.memo_max_words} words: past that the memo is cut off "
-        f"where it stands and the rest is lost.")
+        f"them wrongly, the rules you now trade by, and what you are still unsure of.")

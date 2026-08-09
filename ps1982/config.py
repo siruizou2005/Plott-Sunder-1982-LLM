@@ -144,18 +144,24 @@ class Rules(BaseModel):
     # across the ~96% of calls that carry notes.
     period_end_style: Literal["note", "memo"] = "note"
 
-    # The memo's target length, rendered as "about {memo_words} words", and a stated
-    # ceiling. Read only under the memo style. Both live in the brief rather than the
-    # system prompt, which is where the note style's "about 100 words" already sits — the
-    # system prompt says what kind of document it is, the brief says how long.
+    # The memo's target length, rendered into the brief as "about {memo_words} words" —
+    # one number, stated once. It lives in the brief rather than the system prompt, which
+    # is where the note style's "about 100 words" already sits: the system prompt says what
+    # kind of document it is, the brief says how long.
     #
     # "about N" rather than a range, because a range is what failed. Measured on
     # runs/probes/ladder2_smoke, a 3-period session of exactly this configuration: asked
     # for "between 500 and 800 words", the model produced a median of 1050 and a maximum
     # of 5168, with only 19% inside the band. The same model honours the note style's
-    # "about 100 words" to a median of 105. A single soft target is the phrasing that
-    # works; the ceiling is stated separately so the runaway tail has something to hit.
+    # "about 100 words" to a median of 105. A single soft target is the phrasing this
+    # model follows.
     memo_words: int = 600
+
+    # NOT a prompt instruction — memo_max_words never reaches a prompt, for the same
+    # reason the range was dropped: a second number in front of the model is what the
+    # measurement argues against. It is the length the token budget must be able to PAY
+    # for, and its only job is to size the reflect floor in Config._check. Raise it if you
+    # are willing to buy longer memos; the floor moves with it.
     memo_max_words: int = 1200
 
     # How many of its own past notes an agent carries into a prompt (design doc §6 ①).
@@ -352,8 +358,8 @@ class Config(BaseModel):
             # memos from this exact configuration: the body runs 1.25 tokens per word, and
             # reasoning ran a median of 1,800, a p90 of 4,021 and a maximum of 7,450.
             #
-            # The floor is "a memo at the stated ceiling, still intact when reasoning has
-            # its worst measured run". Below it, the model does not fail loudly — it
+            # The floor is "a memo at memo_max_words, still intact when reasoning has its
+            # worst measured run". Below it, the model does not fail loudly — it
             # returns a memo cut mid-sentence, which is non-empty and is therefore stored
             # and carried as the seat's whole memory.
             floor = int(self.rules.memo_max_words * TOKENS_PER_WORD) + REASONING_HEADROOM

@@ -133,7 +133,7 @@ agent *knows* — only how much it writes and how much of its own reasoning it c
 forward. It rides here because the ladder's whole subject is what an agent does with an
 inference it has the material for, and the baseline's fourteen disconnected notes behind a
 window of two give it nowhere to keep one. `Config` forces `period_end_notes: 1` under it,
-refuses a reflect budget that could not hold a memo at the stated ceiling alongside
+refuses a reflect budget that could not pay for a memo at `memo_max_words` alongside
 reasoning's worst measured run, and requires an empty memo to be retried rather than
 discarded; the scenarios run a 16,384 budget and 3 retries.
 
