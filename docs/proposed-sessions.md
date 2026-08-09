@@ -28,9 +28,9 @@ DRY=1 ./run_proposed.sh ladder2              # print the wave, launch nothing
 | `stopped` | 4 | ~7–8 h | ~$10 | the sag benchmark | run |
 | `sellside` | 3 | ~8 h | ~$7.5 | sell-side sample | run |
 | `disclosed` | 3 | ~8 h | ~$7.5 | the common-knowledge deficit | run |
-| `ladder2` | 4 | ~8 h | ~$10.5 | the deficit, dialled up one rung | **not run** |
-| `ladder3` | 4 | ~8 h | ~$10.5 | and one rung further | **not run** |
-| | **24** | **~54 h** | **~$69** | | |
+| `ladder2` | 4 | ~8 h | ~$12.7 | the deficit, dialled up one rung | **not run** |
+| `ladder3` | 4 | ~8 h | ~$12.7 | and one rung further | **not run** |
+| | **24** | **~54 h** | **~$73** | | |
 
 Costs are measured, not projected: the market-4 rounds arm ran six sessions at 4, 5 and 6
 rounds and recorded $3.77–$4.04 and 13.0–13.2 h for the 6-round pair, against ~$2.47 and
@@ -191,10 +191,17 @@ card holders are the same investors every card year, which makes cross-period in
 available for the first time. Full design, wording and the truth-check of each new sentence
 against the engine: `docs/disclosure-treatment.md`.
 
-**The caveat that has to travel with any result.** `objective_profit_max` and
-`clue_is_certain` ride with both rungs, so **rung 2 − rung 1 is a bundle of three dials.**
-Only **rung 3 − rung 2 is a single-dial contrast**. A large rung-2 effect will not say which
-of the three produced it; the ladder is a dose-response, not four clean comparisons.
+**The caveat that has to travel with any result.** `objective_profit_max`,
+`clue_is_certain` and `period_end_style: memo` all ride with both rungs, so **rung 2 −
+rung 1 is a bundle of four dials.** Only **rung 3 − rung 2 is a single-dial contrast** —
+the three passengers are constant across the two tiers, which is precisely what keeps it
+clean. A large rung-2 effect will not say which of the four produced it; the ladder is a
+dose-response against `runs/disclosed/`, not four clean comparisons.
+
+The memo is the largest of the three passengers and the one least like the others: it
+changes how much an agent writes and carries, not what it knows (`docs/design-deltas.md`
+§5.7). If the rung-2 result is to be decomposed later, a rung-1-plus-memo session on the
+same seeds is the cheapest cut — four sessions, ~$11.
 
 **Seeds, and why these ones.** m7 runs {42, 45}, m8 runs {42, 44}; each market's pair pools
 to 9 buy / 9 sell over the informed periods. That is a departure from Arm 3, which declined
@@ -210,12 +217,12 @@ periods per market), and m7's unfiltered seeds 43 and 44 are its two most buy-he
 Seed 42 is in both pairs because it is the only seed with a completed rung-1 session, so
 the full four-rung ladder exists there and nowhere else.
 
-**Cost.** ~$10.5 and ~8 h per wave, from Arm 4's measured 4,269–4,545 calls and $2.47–$2.81
-per session. 4 × 12 = 48 in flight; both waves at once would be 96, past the ceiling.
-
-**Not folded in.** `Rules.period_end_style` is an orthogonal dial and these scenarios leave
-it at `"note"` — see `docs/design-deltas.md` §5.7. Folding it in would make rung 2 − rung 1
-a bundle of four.
+**Cost.** ~$12.7 and ~8 h per wave, ~$25 for both. The per-seed base comes from the
+completed sessions on those exact draws ($2.54–$2.87, and seeds 44/45 are the pricier ones
+because they provoke more trading); the memo adds ~16%, almost all of it on the input side
+— notes ride in the user message, which no prefix cache covers, and the memo is in ~96% of
+turn and broadcast prompts. 4 × 12 = 48 in flight; both waves at once would be 96, past the
+ceiling.
 
 ## Reading the results
 

@@ -456,7 +456,7 @@ rounds per period (truncation), four on the stopped baselines (the sag benchmark
 more control seeds (sell-side sample), and three with the type structure disclosed in every
 prompt (the common-knowledge deficit). **Eight are designed and not yet run**: `ladder2`
 and `ladder3`, the two rungs above `disclosed` on the
-[disclosure ladder](docs/disclosure-treatment.md), ≈ $21 over ~16 hours. One wave at a
+[disclosure ladder](docs/disclosure-treatment.md), ≈ $25 over ~16 hours. One wave at a
 time: sessions × W is a structural ceiling against the endpoint, and the two ladder waves
 together would put 96 requests against a tolerated 50–80.
 

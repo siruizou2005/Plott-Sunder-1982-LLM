@@ -164,10 +164,11 @@ PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
     "disclosed": ("m4_disclosed_paper", "m7_disclosed_s42", "m8_disclosed_s42"),
     # The disclosure LADDER, tiers 2 and 3, one wave each (docs/disclosure-treatment.md).
     # Tier 2 announces each year's card condition in both directions, so a blank card
-    # stops being ambiguous; tier 3 adds that the card holders never change. Both carry an
-    # explicit earnings objective in all three prompts and emphatic wording for the card's
-    # certainty, so tier2 - tier1 is a bundle of three dials and only tier3 - tier2 is a
-    # single one — the ladder is a dose-response, not four clean contrasts.
+    # stops being ambiguous; tier 3 adds that the card holders never change. Both also
+    # carry an explicit earnings objective in all three prompts, emphatic wording for the
+    # card's certainty, and the memo-style year-end summary — so tier2 - tier1 is a bundle
+    # of FOUR dials and only tier3 - tier2 is a single one. The three passengers are
+    # constant across the two tiers, which is what keeps that one contrast clean.
     #
     # Two markets x two seeds. All four seeds have completed baselines and two of the four
     # also have a completed tier-1 rung, so seeds 42 carry the full four-rung ladder. The

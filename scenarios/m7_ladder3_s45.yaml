@@ -24,8 +24,9 @@
 #
 # What it does NOT disclose, here or at any rung, is WHICH investors they are.
 #
-# Everything else is its tier-2 twin's, including objective_profit_max and
-# clue_is_certain, so the pair differs in the fixedness sentence alone.
+# Everything else is its tier-2 twin's, including objective_profit_max, clue_is_certain
+# and the memo-style year-end summary, so the pair differs in the fixedness sentence alone.
+# That is what keeps this contrast clean while tier 2 minus tier 1 is a bundle of four.
 #
 # Run on m7_ctrl_45's seed: Market.redrawn keys the sequence RNG on
 # "ps1982-m7-seq-45", so this session draws the same fourteen states its pairs drew
@@ -57,7 +58,6 @@ rules:
   elicit_beliefs: true
   broadcast_reason: true
   market_log_window: 0             # whole period, like market 5's photocopied log
-  period_end_notes: 2
   trade_notes: 3
   not_selected_window: 5
   # The rung. pydantic drops unknown keys silently, so a typo here would run a LOWER rung
@@ -71,8 +71,19 @@ rules:
   clue_is_certain: true            # rides with tiers 2 and 3; states no new fact
   # announce_no_info_period is left UNSET on purpose: disclose_card_years announces the
   # same fact in the no-card direction, and Config refuses an explicit false beside it.
-  # period_end_style is left at "note" on purpose too -- the memo tier is orthogonal to
-  # this ladder, and folding it in would make tier 2 minus tier 1 a bundle of four.
+  #
+  # The year-end summary runs as a MEMO rather than a fresh 100-word note: one standing
+  # document, rewritten in full each year, the new version replacing the old. The baseline
+  # note is honoured tightly (median 105 words), so fourteen years leave fourteen
+  # disconnected notes behind a window of two and nothing carries a view forward. Config
+  # forces the window to 1 -- a memo already contains its own history -- and refuses a
+  # reflect budget under 4096, which is why the agent block below raises it.
+  #
+  # This is held CONSTANT across tiers 2 and 3, so tier3 - tier2 is still the single-dial
+  # fixedness contrast. It does mean tier2 - tier1 moves four things at once against the
+  # completed runs/disclosed/ sessions, not three; docs/disclosure-treatment.md says so.
+  period_end_style: memo
+  period_end_notes: 1              # forced by Config: the memo supersedes its own history
 agents:
   - kind: llm
     model: deepseek-v4-flash
@@ -88,7 +99,10 @@ agents:
     broadcast_max_output_tokens: 8192  # 512 truncated 29% of broadcasts to nothing;
                                        # see scenarios/m7_control_r6_s42.yaml
     reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
-    reflect_max_output_tokens: 3000 # at 400 and 1200 the note itself truncated away
+    reflect_max_output_tokens: 8192 # the memo is ~1,100 tokens of body and
+                                   # reasoning shares the budget; at 3000
+                                   # (the note default) it would truncate
+                                   # mid-sentence and be stored anyway
 
 pricing:
   input_per_mtok: 0.1408

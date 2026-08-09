@@ -90,6 +90,12 @@ TIER_FLAGS = {
     3: {"disclose_structure", "disclose_card_years", "disclose_insiders_fixed",
         "objective_profit_max", "clue_is_certain"},
 }
+# Non-boolean settings both tiers share. The memo runs across the whole ladder, so it is
+# constant in the tier3 - tier2 contrast and does NOT disturb it; what it does disturb is
+# tier2 - tier1 against the completed runs/disclosed/ sessions, which moves four things.
+# period_end_notes: 1 is forced by Config, and the reflect budget has to clear 4096.
+LADDER_SETTINGS = {"period_end_style": "memo", "period_end_notes": 1}
+LADDER_REFLECT_TOKENS = 8192
 
 LADDER_CASES = [(t, *row) for t, rows in LADDER.items() for row in rows]
 
@@ -113,9 +119,19 @@ def test_ladder_scenario_loads_its_rung_and_pairing(tier, path, run_name, market
 
     baseline = Rules()
     for field in Rules.model_fields:
-        want = True if field in TIER_FLAGS[tier] else getattr(baseline, field)
+        if field in TIER_FLAGS[tier]:
+            want = True
+        elif field in LADDER_SETTINGS:
+            want = LADDER_SETTINGS[field]
+        else:
+            want = getattr(baseline, field)
         assert getattr(cfg.rules, field) == want, \
             f"{path}: rules.{field} is {getattr(cfg.rules, field)!r}, expected {want!r}"
+
+    # The memo needs a budget that can hold it — Config refuses below 4096, and a note-sized
+    # 3000 would truncate it mid-sentence and store the fragment as the seat's whole memory.
+    for spec in cfg.agents:
+        assert spec.reflect_max_output_tokens == LADDER_REFLECT_TOKENS, path
 
 
 def test_the_two_ladder_tiers_differ_in_exactly_one_flag():

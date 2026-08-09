@@ -12,11 +12,16 @@ session render byte-identical prompts.
 | 2 | `disclose_card_years` | and each year is announced as a card year or not, in both directions | designed, not run |
 | 3 | `disclose_insiders_fixed` | and the investors holding the cards are the same ones every card year | designed, not run |
 
-Two more dials ride with rungs 2 and 3 and are held constant across them:
-`objective_profit_max` and `clue_is_certain` (below). So **rung 2 minus rung 1 is a bundle
-of three dials, and only rung 3 minus rung 2 is a single-dial contrast.** The ladder is a
-dose-response, not four clean comparisons, and a large rung-2 effect will not say which of
-the three caused it.
+Three more dials ride with rungs 2 and 3 and are **held constant across them**:
+`objective_profit_max`, `clue_is_certain`, and `period_end_style: memo` (all below). So
+**rung 2 minus rung 1 is a bundle of four dials, and only rung 3 minus rung 2 is a
+single-dial contrast.** Being constant across the two top rungs is exactly what keeps that
+one contrast clean; what the passengers cost is attribution against the completed rung-1
+sessions. A large rung-2 effect will not say which of the four caused it.
+
+If it needs decomposing later, the cheapest cut is a rung-1-plus-memo session on the same
+seeds — the memo is the largest passenger and the one least like the others, since it
+changes how much an agent writes and carries rather than what it knows.
 
 ## What is never disclosed, at any rung
 
@@ -92,9 +97,9 @@ wording and the dealing move together or the suite fails.
 What it makes available is cross-period inference: an agent that identifies a likely card
 holder in year 6 can carry the suspicion to year 7. Rung 1 explicitly denied it that.
 
-## The two dials that ride along
+## The three dials that ride along
 
-Both are on in rungs 2 and 3 and off below, so neither is separable from rung 2.
+All are on in rungs 2 and 3 and off below, so none is separable from rung 2.
 
 **`objective_profit_max`** puts an explicit earnings objective in the *shared preamble*,
 which is the only place that reaches the turn, the broadcast and the reflection prompts
@@ -111,6 +116,15 @@ the changed sentence — where the two disclosure rungs are uninformed-side, and
 should not lump them together. `Config` refuses it on market 1, whose card is a ten-draw
 sample either box can produce; the imperfect-clue branch means it could not render there
 anyway.
+
+**`period_end_style: memo`** replaces the 100-word year-end note with one standing document
+the agent rewrites in full each year, the new version replacing the old
+(`docs/design-deltas.md` §5.7). It is the one passenger that changes nothing about what an
+agent *knows* — only how much it writes and how much of its own reasoning it carries
+forward. It rides here because the ladder's whole subject is what an agent does with an
+inference it has the material for, and the baseline's fourteen disconnected notes behind a
+window of two give it nowhere to keep one. `Config` forces `period_end_notes: 1` under it
+and refuses a reflect budget below 4,096; the scenarios run 8,192.
 
 ## Wording constraints, unchanged from rung 1
 
@@ -224,16 +238,40 @@ which is what makes the full four-rung ladder exist anywhere.
   and 3 should widen market 8's gain and do less for market 7 — and if the split was the
   draw rather than the type roles, they should not.
 - **Rung 3 minus rung 2 is the only clean contrast.** Attribute a rung-2 effect to the
-  bundle, not to the card-year announcement.
+  bundle of four, not to the card-year announcement.
+- **The memo changes what the notes measure.** `docs/agent-reasoning.md`'s note statistics
+  — keyword incidence, the 10.6% who blame a lost tie-break on being slow — were computed
+  on ~105-word notes written fresh each year. A 500–800 word document rewritten annually is
+  not the same object, and per-note rates are not comparable across the two styles.
 - **Do not pool with the baselines.** These sessions test the baselines' external validity;
   folding them into the replication counts would launder the treatment into the result.
 
-Cost: four 3-round sessions per wave, ~$2.5 and ~8 h each in parallel (48 requests in
-flight at ceiling), so ~$10.5 a wave and ~$21 for both. The added text is a few hundred
-characters on a cached prefix plus one line per year; the cost effect is noise.
+## Cost
 
-## Not part of this ladder
+~**$12.7 a wave, ~$25 for both**, and ~8 h per wave in parallel (48 requests in flight at
+ceiling; both waves at once would be 96, past it, so they run separately and the wall clock
+is ~16 h).
 
-`Rules.period_end_style` (`docs/design-deltas.md` §5.4) is an orthogonal dial that changes
-how much an agent writes, not what it knows. The eight ladder scenarios deliberately leave
-it at `"note"`: folding it in would make rung 2 minus rung 1 a bundle of four.
+The per-seed base is the measured cost of the completed session on that exact draw — same
+seed, same fourteen states, so the same amount of trading to pay for:
+
+| seed | measured base | note |
+|---|---|---|
+| m7 42 | $2.54 | mean of rung-1 $2.47 and baseline $2.61 |
+| m7 45 | $2.86 | baseline only |
+| m8 42 | $2.66 | mean of rung-1 $2.81 and baseline $2.51 |
+| m8 44 | $2.87 | baseline only |
+
+Seeds 44 and 45 are the pricier draws (4,728 and 5,159 calls against ~4,300–4,600), which
+is about the sequence and not the treatment.
+
+Two things add to that base, and they are very different sizes:
+
+- **The disclosure text: ~$0.025 a session, i.e. noise.** The objective block and the
+  certainty wording sit in the system prompt, which is the cached prefix; the card-year
+  line is ~16 tokens in the brief.
+- **The memo: ~+16%.** Almost all of it on the *input* side. Notes ride in the user
+  message, which no prefix cache covers, and the memo appears in ~96% of turn and broadcast
+  prompts. Replacing two ~105-word notes with one ~650-word memo adds ~600 tokens to each
+  of ~4,100 prompts — ~+$0.35 of input against ~+$0.06 of output. The fourteen calls that
+  *write* the memo are the cheap part.
