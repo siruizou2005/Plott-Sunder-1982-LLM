@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from ..config import AgentSpec, Rules
 from ..llm import get_provider
+from ..llm.base import Usage
 from ..prompts import (broadcast_system_prompt, build_brief, build_broadcast_brief,
                        coerce_broadcast, coerce_turn, reflect_system_prompt, system_prompt,
                        validate)
@@ -146,11 +147,38 @@ class LLMAgent(Agent):
         # saving, and the notes came out wrong in a way that persisted: 20 of the 20 smoke
         # notes stating a prior expected value stated the naive 50/50 one. A note is
         # durable memory, so the error outlived the call that made it.
-        r = self.provider.complete_text(system or self.reflect_system, user,
-                                        thinking=self.spec.reflect_thinking,
-                                        max_output_tokens=self.spec.reflect_max_output_tokens)
-        return {"text": (r.get("text") or "").strip(),
-                "raw": _envelope(r, system=system or self.reflect_system, user=user)}
+        #
+        # An EMPTY answer is retried, up to spec.reflect_empty_retries times. Nothing
+        # retried it before: max_retries covers transient API errors, repair_retries covers
+        # unparseable JSON, and complete_text sets repairs = 0, so the text channel had no
+        # loop at all — an empty note went straight to a violation and was discarded. It is
+        # almost never a model with nothing to say; it is a call that spent its whole
+        # output budget reasoning, which is why retrying works at all.
+        sys_text = system or self.reflect_system
+        usage, attempts, retries, backoff_s, latency = Usage(), 0, 0, 0.0, 0.0
+        while True:
+            r = self.provider.complete_text(
+                sys_text, user, thinking=self.spec.reflect_thinking,
+                max_output_tokens=self.spec.reflect_max_output_tokens)
+            attempts += 1
+            # Summed across attempts, exactly as complete_json does across its repairs, so
+            # a retried reflection is billed for what it actually spent. `or Usage()`
+            # because a provider may report nothing, which _envelope already guards for.
+            usage += r.get("usage") or Usage()
+            retries += r.get("retries", 0)
+            backoff_s += r.get("backoff_s", 0.0)
+            latency += r.get("latency_s", 0.0)
+            text = (r.get("text") or "").strip()
+            # Stop on an answer, on a real API failure (retrying THAT is max_retries' job
+            # and it has already given up), or when the allowance is spent.
+            if text or r.get("api_error") or attempts > self.spec.reflect_empty_retries:
+                break
+        r.update(usage=usage, retries=retries, backoff_s=backoff_s, latency_s=latency)
+        env = _envelope(r, system=sys_text, user=user)
+        # How many calls this note cost. 1 is the ordinary case; >1 means the first answer
+        # came back empty, which is invisible in the log without this.
+        env["attempts"] = attempts
+        return {"text": text, "raw": env}
 
     @property
     def reflect_system_text(self) -> str:

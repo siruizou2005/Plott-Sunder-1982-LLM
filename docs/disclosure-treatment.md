@@ -19,9 +19,18 @@ single-dial contrast.** Being constant across the two top rungs is exactly what 
 one contrast clean; what the passengers cost is attribution against the completed rung-1
 sessions. A large rung-2 effect will not say which of the four caused it.
 
-If it needs decomposing later, the cheapest cut is a rung-1-plus-memo session on the same
-seeds — the memo is the largest passenger and the one least like the others, since it
-changes how much an agent writes and carries rather than what it knows.
+**That decomposition is now a wave of its own**, `ladder1b`: two sessions, market 7 and
+market 8, on the seed both already have a rung-1 session on. It runs rung 1's disclosure
+plus all three passengers and **not** `disclose_card_years`, which turns one four-dial step
+into two single-dial ones:
+
+| contrast | isolates |
+|---|---|
+| `runs/disclosed/` → `ladder1b` | the three passengers (objective, certainty, memo) |
+| `ladder1b` → `ladder2` | the card-year rung alone |
+| `ladder2` → `ladder3` | the fixedness sentence alone |
+
+With it, every step of the ladder is a single-dial contrast.
 
 ## What is never disclosed, at any rung
 
@@ -123,8 +132,10 @@ the agent rewrites in full each year, the new version replacing the old
 agent *knows* — only how much it writes and how much of its own reasoning it carries
 forward. It rides here because the ladder's whole subject is what an agent does with an
 inference it has the material for, and the baseline's fourteen disconnected notes behind a
-window of two give it nowhere to keep one. `Config` forces `period_end_notes: 1` under it
-and refuses a reflect budget below 4,096; the scenarios run 8,192.
+window of two give it nowhere to keep one. `Config` forces `period_end_notes: 1` under it,
+refuses a reflect budget that could not hold a memo at the stated ceiling alongside
+reasoning's worst measured run, and requires an empty memo to be retried rather than
+discarded; the scenarios run a 16,384 budget and 3 retries.
 
 ## Wording constraints, unchanged from rung 1
 

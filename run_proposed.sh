@@ -5,16 +5,17 @@
 #   ./run_proposed.sh stopped       # 4 sessions, ~7-8h,  ~$10    uninformed resting level
 #   ./run_proposed.sh sellside      # 3 sessions, ~8h,    ~$7.5   sell-side sample
 #   ./run_proposed.sh disclosed     # 3 sessions, ~8h,    ~$7.5   structural disclosure
-#   ./run_proposed.sh ladder2       # 4 sessions, ~8h,    ~$10.5  ladder tier 2
-#   ./run_proposed.sh ladder3       # 4 sessions, ~8h,    ~$10.5  ladder tier 3
+#   ./run_proposed.sh ladder2       # 4 sessions, ~8h,    ~$15    ladder tier 2
+#   ./run_proposed.sh ladder3       # 4 sessions, ~8h,    ~$15    ladder tier 3
+#   ./run_proposed.sh ladder1b      # 2 sessions, ~8h,    ~$7.3   decomposes tier 2
 #   DRY=1 ./run_proposed.sh rounds  # print the plan, launch nothing
 #   ./run_proposed.sh stopped m94_stopped   # just these scenarios from the wave
 #
 # ONE WAVE AT A TIME, and the constraint is the endpoint rather than the box. A session
 # drives its phases on one thread, so at most `broadcast_workers` of its requests are in
 # flight at any instant and sessions x W is a structural ceiling against Bailian's
-# tolerated 50-80. The waves are 72, 48, 36, 36, 48 and 48. All twenty-one unrun sessions
-# at once would be 252, and the two ladder waves alone would be 96. W
+# tolerated 50-80. The waves are 72, 48, 36, 36, 48, 48 and 24. The three unrun waves at
+# once would be 120. W
 # stays at 12 in every scenario file because the 26 sessions these arms are read against
 # all ran at 12; lowering it here would put a throughput difference between an arm and its
 # own comparison. The script refuses to start a wave while another one is running, for the
@@ -32,7 +33,7 @@ cd "$(dirname "$0")"
 
 WAVE=${1:-}
 if [ -z "$WAVE" ]; then
-  echo "usage: ./run_proposed.sh <rounds|stopped|sellside|disclosed|ladder2|ladder3>" \
+  echo "usage: ./run_proposed.sh <rounds|stopped|sellside|disclosed|ladder2|ladder3|ladder1b>" \
        "[scenario ...]" >&2
   exit 2
 fi

@@ -338,6 +338,79 @@ def test_a_note_under_its_cap_is_not_reported_as_truncated(engine_factory):
     assert len(eng.state["S01"].reflections) == 1
 
 
+def _reflect_agent(monkeypatch, texts, *, empty_retries):
+    """An LLMAgent whose provider returns `texts` in order, recording each call."""
+    from ps1982.agents.llm_agent import LLMAgent
+    from ps1982.config import AgentSpec, Rules
+    from ps1982.llm.base import Usage
+    from ps1982.markets import MARKETS
+
+    seen = []
+
+    class Rec:
+        def complete_text(self, system, user, *, temperature=None, thinking=None,
+                          max_output_tokens=None):
+            t = texts[min(len(seen), len(texts) - 1)]
+            seen.append(t)
+            return {"text": t, "usage": Usage(prompt_tokens=100, completion_tokens=3000,
+                                              reasoning_tokens=2900),
+                    "retries": 0, "backoff_s": 0.0, "latency_s": 1.0,
+                    "error": None, "api_error": False}
+
+    spec = AgentSpec(kind="llm", reflect_max_output_tokens=16384,
+                     reflect_empty_retries=empty_retries)
+    monkeypatch.setattr("ps1982.agents.llm_agent.get_provider", lambda **kw: Rec())
+    return LLMAgent("S01", spec, Rules(), MARKETS[3], name="Nora"), seen
+
+
+def test_an_empty_reflection_is_retried_and_the_retries_are_billed(monkeypatch):
+    """An empty note used to be discarded outright — nothing retried it. max_retries
+    covers transient API errors and repair_retries covers unparseable JSON, and
+    complete_text sets repairs = 0, so the text channel had no loop at all.
+
+    It is almost never a model with nothing to say: reasoning shares the output budget, so
+    an empty note is a call that spent the whole cap thinking. Under the memo style the
+    loss is worse than a missing note, because the memo is the seat's ENTIRE long-term
+    memory and losing one year silently reverts that agent to the previous year's view.
+    """
+    agent, seen = _reflect_agent(monkeypatch, ["", "  ", "the real memo"], empty_retries=3)
+    out = agent.reflect("period_end", agent.reflect_system_text, "write it")
+
+    assert out["text"] == "the real memo"
+    assert len(seen) == 3, "should have stopped as soon as an answer arrived"
+    assert out["raw"]["attempts"] == 3
+    # Every attempt is billed. Summing is what complete_json already does across repairs;
+    # not summing would under-report the cost of exactly the calls that cost most.
+    assert out["raw"]["usage"]["completion_tokens"] == 9000
+
+
+def test_reflection_retries_give_up_and_report_the_note_as_empty(monkeypatch):
+    """The allowance is finite. When it runs out the engine still sees an empty note and
+    records empty_note, which is the behaviour without the retry — the retry buys attempts,
+    not a guarantee."""
+    agent, seen = _reflect_agent(monkeypatch, [""], empty_retries=3)
+    out = agent.reflect("period_end", agent.reflect_system_text, "write it")
+    assert out["text"] == ""
+    assert len(seen) == 4, "one initial call plus three retries"
+    assert out["raw"]["attempts"] == 4
+
+
+def test_reflection_is_not_retried_by_default(monkeypatch):
+    """Zero is the default, so no completed scenario changes meaning: config.py's
+    convention is that a new knob's default reproduces the baseline."""
+    agent, seen = _reflect_agent(monkeypatch, [""], empty_retries=0)
+    out = agent.reflect("period_end", agent.reflect_system_text, "write it")
+    assert out["text"] == "" and len(seen) == 1 and out["raw"]["attempts"] == 1
+
+
+def test_a_nonempty_reflection_costs_exactly_one_call(monkeypatch):
+    """The retry must not fire on the ordinary path — that would double every note's
+    cost."""
+    agent, seen = _reflect_agent(monkeypatch, ["a note"], empty_retries=3)
+    out = agent.reflect("period_end", agent.reflect_system_text, "write it")
+    assert out["text"] == "a note" and len(seen) == 1 and out["raw"]["attempts"] == 1
+
+
 def test_the_two_kinds_of_note_are_windowed_separately(engine_factory):
     """design-deltas §5.3: under one shared window the post-trade notes evict the year-end
     reflection, measured at 3.4 trade notes per seat per period against a window of three.

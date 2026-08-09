@@ -182,6 +182,13 @@ PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
                 "m8_ladder2_s42", "m8_ladder2_s44"),
     "ladder3": ("m7_ladder3_s42", "m7_ladder3_s45",
                 "m8_ladder3_s42", "m8_ladder3_s44"),
+    # The decomposition of that bundle of four. Tier 1's disclosure plus the three
+    # passengers (objective, certainty, memo) and NOT disclose_card_years, on the seed
+    # both markets already have a tier-1 session on. It turns one four-dial step into two
+    # single-dial ones: tier1 -> 1b isolates the passengers, 1b -> tier2 isolates the
+    # card-year rung. 2 x 12 = 24 in flight, so it can run beside nothing or after either
+    # ladder wave. ~$7.3.
+    "ladder1b": ("m7_ladder1b_s42", "m8_ladder1b_s42"),
 }
 
 

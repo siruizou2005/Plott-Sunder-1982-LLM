@@ -1,50 +1,38 @@
-# Market 8, tier 3 of the disclosure ladder. Identical to m8_ctrl_42
-# -- same market, same seed, same drawn sequence, same model, same three thinking
-# budgets, same W=12 -- except for the rules flagged below. The ladder is
-# docs/disclosure-treatment.md; this file is market 8's seed-42 rung 3 of it.
+# Market 8, the ladder's DECOMPOSITION session. Tier 1's disclosure, plus the two
+# prompt dials and the memo that ride with tiers 2 and 3 -- and NOT disclose_card_years.
 #
-# Market 8 is the twin that IMPROVED on both sides under tier 1, +0.123 buy and +0.324
-# sell, and it is the one whose disclosure leaves its marginal type unable to sit still:
-# type I sets v-bar at 300 and tops NEITHER state, where market 7's type I both sets v-bar
-# and wins the buy state. Its whole roster came unstuck -- never-moved rates 43/42/30% to
-# 9/9/13% -- and its directional swing tripled. If the split is the type-role difference
-# rather than the draw, the rungs above should widen it here and not on market 7.
+# It exists because tier 2 minus tier 1 moves four things at once. This session holds the
+# card-year announcement out and moves the other three, so the pair
 #
-# Tier 3 adds ONE sentence to its tier-2 twin: the investors holding the cards are the
-# same ones in every year cards are handed out. This is the ladder's only single-dial
-# contrast -- the tier-2 file is identical but for disclose_insiders_fixed -- and it is
-# true of the engine rather than asserted: Market.insiders is the first two seats of each
-# type block and neither the period nor the redraw moves it, which
-# tests/test_prompts.py::test_fixedness_disclosure_matches_the_engine pins.
+#     runs/disclosed/m8_disc_42   (tier 1: structure only, note style)
+#     ladder1b/m8_lad1b_42        (tier 1 + objective + certainty + memo)
 #
-# What it does NOT disclose, here or at any rung, is WHICH investors they are.
+# isolates the three passengers, and
 #
-# Everything else is its tier-2 twin's, including objective_profit_max, clue_is_certain
-# and the memo-style year-end summary, so the pair differs in the fixedness sentence alone.
-# That is what keeps this contrast clean while tier 2 minus tier 1 is a bundle of four.
+#     ladder1b/m8_lad1b_42        (this session)
+#     ladder2/m8_lad2_42          (adds disclose_card_years, nothing else)
 #
-# Run on m8_ctrl_42's seed: Market.redrawn keys the sequence RNG on
-# "ps1982-m8-seq-42", so this session draws the same fourteen states its pairs drew
-# (XXXXYYXXXXXXYY), and the comparison is PAIRED period by period against
-# runs/control/m8_ctrl_42 and runs/disclosed/m8_disc_42.
+# then isolates the card-year rung itself. Together with tier3 - tier2 for the fixedness
+# sentence, every step of the ladder becomes a single-dial contrast.
 #
-# The nine informed periods split 6 buy / 3 sell on this draw. The two seeds this
-# market runs were chosen so that they pool to 9 buy / 9 sell, which is a departure from
-# scenarios/m7_control.yaml's refusal to filter seeds on the buy/sell balance -- and is
-# defensible for the reason that refusal does not cover. That refusal is about a reported
-# LEVEL, where a selected sample biases the estimate. This is a paired within-market
-# contrast: the same drawn sequence appears on both sides of every comparison, so the
-# state balance moves the precision of the paired difference and not its expectation. It
-# is blocking on a pre-treatment covariate, not sample selection. The full four-rung
-# ladder exists on this seed.
-run_name: ladder3/m8_lad3_42
+# What moves against tier 1: objective_profit_max puts an earnings objective in the turn,
+# broadcast AND reflection prompts (the baseline states one only on a turn);
+# clue_is_certain strengthens wording that already said a lettered card is always correct;
+# period_end_style: memo replaces the fourteen disconnected ~105-word notes with one
+# standing document the agent rewrites each year. None of the three states a new fact
+# about the market's structure -- which is exactly why they are worth separating from the
+# rung that does.
+#
+# Run on m8_ctrl_42's seed, so this session draws the same fourteen states as its
+# baseline, its tier-1 pair and both ladder rungs, and every comparison is paired period
+# by period.
+run_name: ladder1b/m8_lad1b_42
 seed: 42
 sequence_preset: random_prior
 market: 8
 sessions: 1
 max_rounds_per_period: 3
-# This wave is four sessions x 12 workers = 48 in flight, inside Bailian's tolerated
-# 50-80. The two ladder waves run SEPARATELY: all eight at once would be 96, past it.
+# Two sessions x 12 workers = 24 in flight, well inside Bailian's tolerated 50-80.
 broadcast_workers: 12
 
 rules:
@@ -54,17 +42,15 @@ rules:
   market_log_window: 0             # whole period, like market 5's photocopied log
   trade_notes: 3
   not_selected_window: 5
-  # The rung. pydantic drops unknown keys silently, so a typo here would run a LOWER rung
-  # under this run_name -- tests/test_scenarios.py asserts every flag actually loads from
-  # this file, AND that the ones this rung does not set are still off, which is the only
-  # thing separating this file from its twin at the other tier.
-  disclose_structure: true         # tier 1, unchanged
-  disclose_card_years: true        # tier 2: both directions, every year
-  disclose_insiders_fixed: true    # tier 3: and the holders do not change
+  # What this session sets. pydantic drops unknown keys silently, so a typo here would
+  # run a different rung under this run_name -- tests/test_scenarios.py asserts every
+  # flag loads AND that disclose_card_years is still off, which is the whole point.
+  disclose_structure: true         # tier 1, unchanged -- and the ONLY disclosure
   objective_profit_max: true       # rides with tiers 2 and 3; see above
   clue_is_certain: true            # rides with tiers 2 and 3; states no new fact
-  # announce_no_info_period is left UNSET on purpose: disclose_card_years announces the
-  # same fact in the no-card direction, and Config refuses an explicit false beside it.
+  # disclose_card_years is deliberately OFF: that is the rung this session exists to
+  # hold constant. announce_no_info_period stays unset, exactly as in the paired
+  # tier-1 session, so no year's card condition is announced at all.
   #
   # The year-end summary runs as a MEMO rather than a fresh 100-word note: one standing
   # document, rewritten in full each year, the new version replacing the old. The baseline

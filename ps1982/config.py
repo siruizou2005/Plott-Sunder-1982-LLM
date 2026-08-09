@@ -21,6 +21,15 @@ from .params import SEQUENCES, Sequence, random_sequence
 # Not a frozen preset: the states are redrawn from the bingo cage per seed.
 RANDOM_PRESET = "random_prior"
 
+# Both measured on runs/probes/ladder2_smoke — 36 year-end memos written by
+# deepseek-v4-flash under the memo style, not estimated. TOKENS_PER_WORD is the median of
+# (completion - reasoning) / words, whose whole range was 1.22-1.34. REASONING_HEADROOM is
+# the largest reasoning trace observed on a single reflection; the median was 1,800 and the
+# p90 4,021, so this is the tail rather than the typical case. Together they size the
+# reflect budget a memo needs: see Config._check.
+TOKENS_PER_WORD = 1.25
+REASONING_HEADROOM = 7500
+
 
 class Rules(BaseModel):
     """Institution-level treatment variables."""
@@ -135,11 +144,19 @@ class Rules(BaseModel):
     # across the ~96% of calls that carry notes.
     period_end_style: Literal["note", "memo"] = "note"
 
-    # The memo's target length, rendered as "between {lo} and {hi} words". Read only under
-    # the memo style. Lives in the brief rather than the system prompt, which is where the
-    # note style's "about 100 words" already sits — the system prompt says what kind of
-    # document it is, the brief says how long this one should be.
-    memo_words: tuple[int, int] = (500, 800)
+    # The memo's target length, rendered as "about {memo_words} words", and a stated
+    # ceiling. Read only under the memo style. Both live in the brief rather than the
+    # system prompt, which is where the note style's "about 100 words" already sits — the
+    # system prompt says what kind of document it is, the brief says how long.
+    #
+    # "about N" rather than a range, because a range is what failed. Measured on
+    # runs/probes/ladder2_smoke, a 3-period session of exactly this configuration: asked
+    # for "between 500 and 800 words", the model produced a median of 1050 and a maximum
+    # of 5168, with only 19% inside the band. The same model honours the note style's
+    # "about 100 words" to a median of 105. A single soft target is the phrasing that
+    # works; the ceiling is stated separately so the runaway tail has something to hit.
+    memo_words: int = 600
+    memo_max_words: int = 1200
 
     # How many of its own past notes an agent carries into a prompt (design doc §6 ①).
     #
@@ -199,6 +216,26 @@ class AgentSpec(BaseModel):
     # spent 273-926 tokens thinking, but 6 of 12 year-end calls spent the entire 1200
     # reasoning and returned nothing. 400 (the original) and 1200 were both too tight.
     reflect_max_output_tokens: int = 3000
+
+    # Retries for a reflection that comes back EMPTY. Zero is the historical behaviour and
+    # stays the default, so no completed scenario changes meaning.
+    #
+    # Nothing retried this before. `max_retries` covers transient API errors and
+    # `repair_retries` covers unparseable JSON — and complete_text sets repairs = 0
+    # outright, so the text channel had no repair loop at all. An empty note therefore
+    # went straight to an `empty_note` violation and was DISCARDED: that year's memory
+    # simply did not exist, and nothing downstream could tell the difference between a
+    # seat that had nothing to say and a seat whose answer was eaten.
+    #
+    # It is eaten rather than absent. Reasoning shares the output budget, so an empty note
+    # is almost always a call that spent the whole cap thinking — measured at 3% of
+    # year-end notes at a 3,000 cap, and one probe run lost 6 of 12. Under the memo style
+    # the loss is worse than a missing note: the memo is the seat's ENTIRE long-term
+    # memory, so losing one year silently reverts that agent to the previous year's view.
+    #
+    # Usage from every attempt is summed into the envelope, so a retried call costs what
+    # it actually cost.
+    reflect_empty_retries: int = 0
     repair_retries: int = 2
     pace: float = 0.25
     max_retries: int = 5
@@ -305,21 +342,30 @@ class Config(BaseModel):
                     f"period_end_style 'memo' rewrites one standing document, so exactly "
                     f"one is carried forward; period_end_notes is "
                     f"{self.rules.period_end_notes} — set it to 1")
-            # Reasoning shares the reflect budget with the note. At 3,000 and a 100-word
-            # ask, 3% of year-end notes already come back empty having spent the lot
-            # thinking, and one came back truncated mid-clause. A 500-800 word memo is
-            # ~1,100 tokens of body before any reasoning, so 3,000 would truncate it as a
-            # matter of course — and a truncated memo is the seat's whole memory.
-            floor = 4096
+            if self.rules.memo_max_words <= self.rules.memo_words:
+                raise ValueError(
+                    f"memo_max_words ({self.rules.memo_max_words}) must exceed memo_words "
+                    f"({self.rules.memo_words}); the first is a ceiling for the runaway "
+                    f"tail, the second the target the prompt actually asks for")
+            # Reasoning shares the reflect budget with the memo, so the cap has to hold
+            # BOTH. Every number here is measured on runs/probes/ladder2_smoke, 36 year-end
+            # memos from this exact configuration: the body runs 1.25 tokens per word, and
+            # reasoning ran a median of 1,800, a p90 of 4,021 and a maximum of 7,450.
+            #
+            # The floor is "a memo at the stated ceiling, still intact when reasoning has
+            # its worst measured run". Below it, the model does not fail loudly — it
+            # returns a memo cut mid-sentence, which is non-empty and is therefore stored
+            # and carried as the seat's whole memory.
+            floor = int(self.rules.memo_max_words * TOKENS_PER_WORD) + REASONING_HEADROOM
             for a in self.agents:
                 if a.kind == "llm" and a.reflect_max_output_tokens < floor:
                     raise ValueError(
-                        f"period_end_style 'memo' asks for {self.rules.memo_words[0]}-"
-                        f"{self.rules.memo_words[1]} words, which is ~1,100 output tokens "
-                        f"before the reasoning that shares the same budget; "
-                        f"reflect_max_output_tokens is {a.reflect_max_output_tokens}, "
-                        f"below the {floor} floor — the memo would be truncated and stored "
-                        f"anyway")
+                        f"period_end_style 'memo' allows up to {self.rules.memo_max_words} "
+                        f"words, which is ~{int(self.rules.memo_max_words * TOKENS_PER_WORD)} "
+                        f"output tokens of body, and reasoning shares the same budget "
+                        f"(measured max {REASONING_HEADROOM}); reflect_max_output_tokens is "
+                        f"{a.reflect_max_output_tokens}, below the {floor} floor — the memo "
+                        f"would be truncated and stored anyway")
         return self
 
     @property

@@ -1,18 +1,18 @@
-# Twenty-four proposed sessions
+# Twenty-six proposed sessions
 
 Written for the LLM-agent paper (`19-Analysis/paper-llm`). Each arm is justified by a
 specific threat to a specific claim in that manuscript; the numbers below were computed
 from the reported sessions, not estimated.
 
-**Sixteen of the twenty-four have run — the first four waves, all of them.** The eight in
-`ladder2` and `ladder3` have not. This header has been wrong before in both directions, so
+**Sixteen of the twenty-six have run — the first four waves, all of them.** The ten in `ladder2`,
+`ladder3` and `ladder1b` have not. This header has been wrong before in both directions, so
 check rather than read: for each scenario in a wave, take its `run_name` and read `status`
 out of `runs/<run_name>/*.meta.json`.
 
-Six waves, one arm each, run **one wave at a time**. A session holds at most
+Seven waves, one arm each, run **one wave at a time**. A session holds at most
 `broadcast_workers` requests in flight, so sessions × W is a structural ceiling against
-Bailian's tolerated 50–80: the waves are 72, 48, 36, 36, 48 and 48, and the two unrun ones
-together would be 96. W stays at 12 in every file because the 26 sessions these arms are
+Bailian's tolerated 50–80: the waves are 72, 48, 36, 36, 48, 48 and 24, and the three unrun ones
+together would be 120. W stays at 12 in every file because the 26 sessions these arms are
 read against all ran at 12.
 
 ```
@@ -28,9 +28,10 @@ DRY=1 ./run_proposed.sh ladder2              # print the wave, launch nothing
 | `stopped` | 4 | ~7–8 h | ~$10 | the sag benchmark | run |
 | `sellside` | 3 | ~8 h | ~$7.5 | sell-side sample | run |
 | `disclosed` | 3 | ~8 h | ~$7.5 | the common-knowledge deficit | run |
-| `ladder2` | 4 | ~8 h | ~$12.7 | the deficit, dialled up one rung | **not run** |
-| `ladder3` | 4 | ~8 h | ~$12.7 | and one rung further | **not run** |
-| | **24** | **~54 h** | **~$73** | | |
+| `ladder2` | 4 | ~8 h | ~$15 | the deficit, dialled up one rung | **not run** |
+| `ladder3` | 4 | ~8 h | ~$15 | and one rung further | **not run** |
+| `ladder1b` | 2 | ~8 h | ~$7.3 | decomposes ladder2's four-dial step | **not run** |
+| | **26** | **~62 h** | **~$82** | | |
 
 Costs are measured, not projected: the market-4 rounds arm ran six sessions at 4, 5 and 6
 rounds and recorded $3.77–$4.04 and 13.0–13.2 h for the 6-round pair, against ~$2.47 and
@@ -198,10 +199,12 @@ the three passengers are constant across the two tiers, which is precisely what 
 clean. A large rung-2 effect will not say which of the four produced it; the ladder is a
 dose-response against `runs/disclosed/`, not four clean comparisons.
 
-The memo is the largest of the three passengers and the one least like the others: it
-changes how much an agent writes and carries, not what it knows (`docs/design-deltas.md`
-§5.7). If the rung-2 result is to be decomposed later, a rung-1-plus-memo session on the
-same seeds is the cheapest cut — four sessions, ~$11.
+**Arm 7 decomposes it** (2 sessions, wave `ladder1b`): rung 1's disclosure plus all three
+passengers and NOT `disclose_card_years`, on market 7 and market 8 at seed 42, where both
+already have a completed rung-1 session. `runs/disclosed/` → `ladder1b` isolates the three
+passengers; `ladder1b` → `ladder2` isolates the card-year rung. With `ladder3` − `ladder2`
+for the fixedness sentence, every step of the ladder becomes a single-dial contrast.
+2 × 12 = 24 in flight, ~$7.3.
 
 **Seeds, and why these ones.** m7 runs {42, 45}, m8 runs {42, 44}; each market's pair pools
 to 9 buy / 9 sell over the informed periods. That is a departure from Arm 3, which declined

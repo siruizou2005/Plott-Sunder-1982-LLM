@@ -238,12 +238,22 @@ propensity to read the price nor the quality of the reading improves over a sess
 notes or without them.
 
 **What it is.** One standing document. At each year end the agent is shown its previous memo
-verbatim and writes the whole thing again, between 500 and 800 words (`Rules.memo_words`).
-The new version **replaces** the old one, and the prompt says so: *anything you leave out is
-gone, and you will not see it again.* That sentence is the mechanism. A memo that merely
-accumulated would be a longer note; a memo that replaces its predecessor forces the agent to
-decide each year what is still worth carrying, which is what makes it continuous and what
-makes the length honest.
+verbatim and writes the whole thing again, **about 600 words** (`Rules.memo_words`) with a
+stated ceiling of 1200 (`Rules.memo_max_words`). The new version **replaces** the old one,
+and the prompt says so: *anything you leave out is gone, and you will not see it again.*
+That sentence is the mechanism. A memo that merely accumulated would be a longer note; a
+memo that replaces its predecessor forces the agent to decide each year what is still worth
+carrying, which is what makes it continuous and what makes the length honest.
+
+**"about N", not a range — and this was measured, not guessed.** The first version asked for
+"between 500 and 800 words" and `runs/probes/ladder2_smoke` (3 periods, 12 seats, 36 memos,
+exactly this configuration) shows what that produced: **median 1050 words, maximum 5168,
+19% inside the band.** The same model honours the note style's "about 100 words" to a median
+of 105. A single soft target is the phrasing that works; the ceiling is a separate sentence
+so the runaway tail has something explicit to hit.
+
+**The rewrite is real.** In that same probe, 0 of 12 seats grew monotonically across the
+three years (medians 1082 → 1071 → 971). The memo is being rewritten, not appended to.
 
 **One prompt, two occasions.** Both reflection calls share `reflect_system_text` — the
 year-end one and the one written straight after a trade. A task block that simply said
@@ -256,16 +266,35 @@ force. Guards pin both halves.
 
 - **`period_end_notes` must be 1.** The memo already contains its own history, so carrying
   two hands the agent a superseded copy of its own conclusions beside the current one.
-- **`reflect_max_output_tokens` must clear 4,096.** 500–800 words is ~1,100 output tokens of
-  body before any reasoning, and reasoning shares that budget (§5.2). The default 3,000
-  trips the floor, so every memo scenario has to raise it deliberately — 8,192 is the value
-  the scenarios use elsewhere.
+- **`reflect_max_output_tokens` must clear a floor derived from the ceiling**, not a fixed
+  number: `memo_max_words × 1.25 + 7500`, which is 9,000 at the default 1200. Both constants
+  are measured on the same probe — the body runs **1.25 tokens per word** (range 1.22–1.34)
+  and reasoning, which shares this budget, ran a **median of 1,800, a p90 of 4,021 and a
+  maximum of 7,450**. The floor is therefore "a memo at the ceiling, still intact when
+  reasoning has its worst measured run". The scenarios use 16,384.
 
 **Cost lands on the input side, not the output side.** Notes ride in the user message, which
 no prefix cache covers, and they appear in ~96% of turn and broadcast prompts (3,494 of
 3,621 in a completed session). Replacing two ~105-word notes with one ~650-word memo adds
-roughly 600 tokens to each of ~4,100 prompts: **~+$0.35 of input against ~+$0.06 of output,
-about +16% on a $2.47 session.** The fourteen calls that write the memo are the cheap part.
+tokens to each of ~4,100 prompts. **Measured** on the probe rather than projected: the memo
+adds **1,521 tokens** to every prompt that carries it (median 2,246 in the memo-less first
+year against 3,767 in the third), which is **~+$0.88 of input against ~+$0.13 of output,
+about +39% on a $2.6 session.** The fourteen calls that write the memo are the cheap part.
+The first estimate here said +16%, from a 650-word memo; the measured memos were 1050 words,
+and the "about 600" wording is partly an attempt to bring that back down.
+
+**An empty memo is now retried.** Nothing retried it before, and that was a real hole:
+`max_retries` covers transient API errors, `repair_retries` covers unparseable JSON, and
+`complete_text` sets `repairs = 0` outright, so the text channel had no loop at all. An
+empty note went straight to an `empty_note` violation and was **discarded**. It is almost
+never a model with nothing to say — reasoning shares the output budget, so an empty note is
+a call that spent the whole cap thinking (3% of year-end notes at a 3,000 cap; one probe run
+lost 6 of 12). Under this style the loss is worse than a missing note, because the memo is
+the seat's *entire* long-term memory, so losing one year silently reverts that agent to the
+previous year's view. `AgentSpec.reflect_empty_retries` defaults to 0, so no completed
+scenario changes meaning; the memo scenarios set 3. Usage is summed across attempts — as
+`complete_json` already does across its repairs — and the envelope records `attempts`, so a
+retried note is billed for what it cost and is visible in the log.
 
 **A truncated memo is worse than a truncated note**, which is why `truncated_note` was added
 first: a note cut off mid-sentence is non-empty, so it passes the `empty_note` guard and is

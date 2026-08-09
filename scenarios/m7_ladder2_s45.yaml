@@ -78,8 +78,9 @@ rules:
   # document, rewritten in full each year, the new version replacing the old. The baseline
   # note is honoured tightly (median 105 words), so fourteen years leave fourteen
   # disconnected notes behind a window of two and nothing carries a view forward. Config
-  # forces the window to 1 -- a memo already contains its own history -- and refuses a
-  # reflect budget under 4096, which is why the agent block below raises it.
+  # forces the window to 1 -- a memo already contains its own history -- and refuses any
+  # reflect budget that could not hold a memo at the stated ceiling with reasoning's worst
+  # measured run alongside it, which is why the agent block below raises it.
   #
   # This is held CONSTANT across tiers 2 and 3, so tier3 - tier2 is still the single-dial
   # fixedness contrast. It does mean tier2 - tier1 moves four things at once against the
@@ -101,10 +102,19 @@ agents:
     broadcast_max_output_tokens: 8192  # 512 truncated 29% of broadcasts to nothing;
                                        # see scenarios/m7_control_r6_s42.yaml
     reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
-    reflect_max_output_tokens: 8192 # the memo is ~1,100 tokens of body and
-                                   # reasoning shares the budget; at 3000
-                                   # (the note default) it would truncate
-                                   # mid-sentence and be stored anyway
+    reflect_max_output_tokens: 16384 # measured on runs/probes/ladder2_smoke: the body
+                                    # runs 1.25 tokens/word and reasoning, which shares
+                                    # this budget, ran a median of 1,800 and a max of
+                                    # 7,450. A memo at the 1200-word ceiling is ~1,500
+                                    # tokens, so the floor Config enforces is 9,000; this
+                                    # clears it with room, because a truncated memo is
+                                    # non-empty and is therefore STORED as the seat's
+                                    # whole memory
+    reflect_empty_retries: 3        # an empty note used to be discarded outright -- no
+                                    # retry loop covered it, and under the memo style
+                                    # losing one year silently reverts that agent to the
+                                    # previous year's view. Usage is summed across
+                                    # attempts, so a retry is billed for what it cost
 
 pricing:
   input_per_mtok: 0.1408

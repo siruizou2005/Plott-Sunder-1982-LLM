@@ -95,7 +95,14 @@ TIER_FLAGS = {
 # tier2 - tier1 against the completed runs/disclosed/ sessions, which moves four things.
 # period_end_notes: 1 is forced by Config, and the reflect budget has to clear 4096.
 LADDER_SETTINGS = {"period_end_style": "memo", "period_end_notes": 1}
-LADDER_REFLECT_TOKENS = 8192
+LADDER_REFLECT_TOKENS = 16384
+LADDER_EMPTY_RETRIES = 3
+
+# The decomposition sessions: tier 1's disclosure plus the three passengers, and NOT the
+# card-year rung. Same shape as the LADDER table.
+LADDER1B = [("scenarios/m7_ladder1b_s42.yaml", "ladder1b/m7_lad1b_42", 7, 42),
+            ("scenarios/m8_ladder1b_s42.yaml", "ladder1b/m8_lad1b_42", 8, 42)]
+LADDER1B_FLAGS = {"disclose_structure", "objective_profit_max", "clue_is_certain"}
 
 LADDER_CASES = [(t, *row) for t, rows in LADDER.items() for row in rows]
 
@@ -128,10 +135,62 @@ def test_ladder_scenario_loads_its_rung_and_pairing(tier, path, run_name, market
         assert getattr(cfg.rules, field) == want, \
             f"{path}: rules.{field} is {getattr(cfg.rules, field)!r}, expected {want!r}"
 
-    # The memo needs a budget that can hold it — Config refuses below 4096, and a note-sized
-    # 3000 would truncate it mid-sentence and store the fragment as the seat's whole memory.
+    _assert_memo_budget(cfg, path)
+
+
+def _assert_memo_budget(cfg, path):
+    """The memo needs a budget that can hold it and a retry when it comes back empty.
+
+    A note-sized 3,000 truncates a memo mid-sentence, and a truncated memo is non-empty —
+    so it is stored and carried as the seat's whole memory. An empty one used to be
+    discarded outright, which under this style silently reverts the agent a year.
+    """
     for spec in cfg.agents:
         assert spec.reflect_max_output_tokens == LADDER_REFLECT_TOKENS, path
+        assert spec.reflect_empty_retries == LADDER_EMPTY_RETRIES, path
+
+
+@pytest.mark.parametrize("path,run_name,market,seed", LADDER1B,
+                         ids=[r[1].split("/")[1] for r in LADDER1B])
+def test_decomposition_scenario_holds_the_card_year_rung_out(path, run_name, market, seed):
+    """1b is tier 1 plus the three passengers. The flag it must NOT set is the whole
+    reason it exists: with disclose_card_years on it would just be tier 2."""
+    cfg = load_config(ROOT / path)
+    assert (cfg.run_name, cfg.market, cfg.seed, cfg.sequence_preset) == \
+        (run_name, market, seed, "random_prior")
+    assert (cfg.sessions, cfg.max_rounds_per_period, cfg.broadcast_workers) == (1, 3, 12)
+    assert cfg.rules.disclose_card_years is False, f"{path}: that would make this tier 2"
+    assert cfg.rules.disclose_insiders_fixed is False
+
+    baseline = Rules()
+    for field in Rules.model_fields:
+        if field in LADDER1B_FLAGS:
+            want = True
+        elif field in LADDER_SETTINGS:
+            want = LADDER_SETTINGS[field]
+        else:
+            want = getattr(baseline, field)
+        assert getattr(cfg.rules, field) == want, \
+            f"{path}: rules.{field} is {getattr(cfg.rules, field)!r}, expected {want!r}"
+    _assert_memo_budget(cfg, path)
+
+
+def test_the_decomposition_isolates_exactly_the_card_year_rung():
+    """1b -> tier 2 must move ONE flag. That is what makes the decomposition work: with
+    tier1 -> 1b isolating the three passengers, every step of the ladder becomes a
+    single-dial contrast."""
+    for (p1b, *_), (p2, *_) in zip(LADDER1B, [r for r in LADDER[2] if r[3] == 42]):
+        r1b = load_config(ROOT / p1b).rules
+        r2 = load_config(ROOT / p2).rules
+        differ = {f for f in Rules.model_fields if getattr(r1b, f) != getattr(r2, f)}
+        assert differ == {"disclose_card_years"}, f"{p1b} vs {p2}: differ in {sorted(differ)}"
+
+
+def test_ladder1b_wave_matches_the_scenario_files():
+    members = batch_plan.PROPOSED_WAVES["ladder1b"]
+    assert members == tuple(Path(p).stem for p, *_ in LADDER1B)
+    for name in members:
+        assert (ROOT / "scenarios" / f"{name}.yaml").is_file(), name
 
 
 def test_the_two_ladder_tiers_differ_in_exactly_one_flag():

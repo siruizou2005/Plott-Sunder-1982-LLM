@@ -451,14 +451,15 @@ a published experiment, and these vary something the experiment did not have:
 MARKETS=-m7 ./run_control_arm.sh                 # one market's three
 ```
 
-A third group of twenty-four sessions runs in six waves. **Sixteen have run** — six at six
+A third group of twenty-six sessions runs in seven waves. **Sixteen have run** — six at six
 rounds per period (truncation), four on the stopped baselines (the sag benchmark), three
 more control seeds (sell-side sample), and three with the type structure disclosed in every
-prompt (the common-knowledge deficit). **Eight are designed and not yet run**: `ladder2`
+prompt (the common-knowledge deficit). **Ten are designed and not yet run**: `ladder2`
 and `ladder3`, the two rungs above `disclosed` on the
-[disclosure ladder](docs/disclosure-treatment.md), ≈ $25 over ~16 hours. One wave at a
-time: sessions × W is a structural ceiling against the endpoint, and the two ladder waves
-together would put 96 requests against a tolerated 50–80.
+[disclosure ladder](docs/disclosure-treatment.md), plus `ladder1b`, which decomposes the
+first of those steps. ≈ $37 over ~24 hours. One wave at a time: sessions × W is a
+structural ceiling against the endpoint, and the three together would put 120 requests
+against a tolerated 50–80.
 
 ```bash
 ./.venv/bin/python batch_plan.py --proposed      # all six waves

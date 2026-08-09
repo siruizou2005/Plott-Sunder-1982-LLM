@@ -913,21 +913,31 @@ def _period_end(rules=RULES, market=M3, reflections=()):
 
 def test_memo_replaces_the_hundred_word_ask_with_a_rewrite():
     """The year-end ask is what tells a memo agent this is the rewrite occasion — the
-    shared reflect system prompt describes both occasions and defers to this line."""
+    shared reflect system prompt describes both occasions and defers to this line.
+
+    "about N words", not a range. The range is what failed: measured on
+    runs/probes/ladder2_smoke, "between 500 and 800 words" returned a median of 1050 and a
+    maximum of 5168 with 19% in band, while the note style's "about 100 words" comes back
+    at a median of 105. The ceiling is a separate sentence so the tail has something to
+    hit.
+    """
     memo = _flat(_period_end(rules=MEMO, reflections=ONE_NOTE))
     note = _flat(_period_end(rules=RULES, reflections=ONE_NOTE))
 
-    assert "Write your memo out again in full, between 500 and 800 words" in memo
+    assert "Write your memo out again in full, about 600 words" in memo
+    assert "Do not go beyond 1200 words" in memo
     assert "this replaces it completely" in memo
     assert "about 100 words" not in memo
+    assert "between" not in memo.split("The market year has ended.")[-1]
 
     assert "Write a note to yourself of about 100 words" in note
     assert "replaces it completely" not in note
 
-    # The range comes from Rules, not from the sentence.
-    wide = _flat(_period_end(rules=Rules(period_end_style="memo", period_end_notes=1,
-                                         memo_words=(300, 400)), reflections=ONE_NOTE))
-    assert "between 300 and 400 words" in wide
+    # Both numbers come from Rules, not from the sentence.
+    other = _flat(_period_end(rules=Rules(period_end_style="memo", period_end_notes=1,
+                                          memo_words=300, memo_max_words=500),
+                              reflections=ONE_NOTE))
+    assert "about 300 words" in other and "Do not go beyond 500 words" in other
 
 
 def test_memo_is_carried_into_every_kind_of_call():
@@ -1026,7 +1036,7 @@ def test_memo_requires_a_window_of_one():
     pays ~900 tokens per call in the ~96% of calls that carry notes to do it."""
     # The default reflect budget is 3,000, below the memo floor, so every memo config has
     # to raise it — which is the intent, and is why it appears here.
-    roster = [{"kind": "llm", "reflect_max_output_tokens": 8192}]
+    roster = [{"kind": "llm", "reflect_max_output_tokens": 16384}]
     with pytest.raises(ValueError, match="period_end_notes"):
         Config(market=7, agents=roster,
                rules={"period_end_style": "memo", "period_end_notes": 2})
@@ -1037,17 +1047,43 @@ def test_memo_requires_a_window_of_one():
 
 
 def test_memo_requires_a_reflect_budget_that_can_hold_it():
-    """Reasoning shares the reflect budget. At 3,000 and a 100-word ask, 3% of year-end
-    notes already come back empty having spent the lot thinking; a 500-800 word memo is
-    ~1,100 tokens of body before any reasoning at all, and a truncated memo is the seat's
-    whole memory."""
+    """Reasoning shares the reflect budget, so the cap has to hold both.
+
+    The floor is derived from the stated ceiling rather than fixed: a memo at
+    memo_max_words, still intact when reasoning has its worst measured run. Both constants
+    come from runs/probes/ladder2_smoke — 1.25 body tokens per word, reasoning median
+    1,800 and max 7,450 — so 1200 words needs 1500 + 7500 = 9000.
+    """
+    from ps1982.config import REASONING_HEADROOM, TOKENS_PER_WORD
     memo = {"period_end_style": "memo", "period_end_notes": 1}
+    floor = int(1200 * TOKENS_PER_WORD) + REASONING_HEADROOM
+    assert floor == 9000
+
     with pytest.raises(ValueError, match="reflect_max_output_tokens"):
         Config(market=7, rules=memo,
                agents=[{"kind": "llm", "reflect_max_output_tokens": 3000}])
+    with pytest.raises(ValueError, match="reflect_max_output_tokens"):
+        Config(market=7, rules=memo,               # the old 8192 no longer clears it
+               agents=[{"kind": "llm", "reflect_max_output_tokens": 8192}])
     Config(market=7, rules=memo,
-           agents=[{"kind": "llm", "reflect_max_output_tokens": 8192}])
+           agents=[{"kind": "llm", "reflect_max_output_tokens": floor}])
+
+    # A lower ceiling lowers the floor with it, so the two move together.
+    Config(market=7, rules={**memo, "memo_words": 200, "memo_max_words": 400},
+           agents=[{"kind": "llm", "reflect_max_output_tokens": 8000}])
+
     # Scripted agents never write a note, so the floor does not apply to them.
     Config(market=7, rules=memo, agents=[{"kind": "pi"}])
     # And the note style keeps the 3,000 default.
     Config(market=7, agents=[{"kind": "llm", "reflect_max_output_tokens": 3000}])
+
+
+def test_memo_ceiling_must_exceed_the_target():
+    """memo_words is what the prompt asks for and memo_max_words is where it gets cut. A
+    ceiling at or below the target would ask for a length it forbids."""
+    for bad in (600, 500):
+        with pytest.raises(ValueError, match="memo_max_words"):
+            Config(market=7,
+                   rules={"period_end_style": "memo", "period_end_notes": 1,
+                          "memo_words": 600, "memo_max_words": bad},
+                   agents=[{"kind": "llm", "reflect_max_output_tokens": 16384}])

@@ -9,7 +9,7 @@
 # that was in flight.
 #
 # The run directory is the scenario's own `run_name`, which for these arms is grouped
-# (control/..., stopped/..., disclosed/..., ladder2/..., ladder3/...), so the checkpoint
+# (control/..., stopped/..., disclosed/..., ladder2/..., ladder3/..., ladder1b/...), so the checkpoint
 # lives one level deeper than for the 26 replication sessions. Read it from the scenario
 # rather than guessing.
 set -uo pipefail
@@ -17,7 +17,7 @@ cd "$(dirname "$0")"
 
 WAVE=${1:-}
 if [ -z "$WAVE" ]; then
-  echo "usage: ./resume_proposed.sh <rounds|stopped|sellside|disclosed|ladder2|ladder3>" >&2
+  echo "usage: ./resume_proposed.sh <rounds|stopped|sellside|disclosed|ladder2|ladder3|ladder1b>" >&2
   exit 2
 fi
 
