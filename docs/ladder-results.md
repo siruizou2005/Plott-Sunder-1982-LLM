@@ -5,8 +5,10 @@ Ten sessions run 2026-08-09 on `gcp-la` at commit `5dad182`. 40,072 model calls,
 excluded for contamination.
 
 The headline is that price convergence rose from **0.34 to 0.85 on the buying side and
-0.49 to 0.75 on the selling side** against the same markets' own baselines, and that the
-two sides were fixed by *different* rungs.
+0.49 to 0.75 on the selling side** against the same markets' own seed-matched baselines, and
+that the two sides were fixed by *different* rungs. Those baseline figures are the
+seed-matched subset, not the control arm's published 0.41 / 0.40 — same D, different sample;
+see §4.1.1.
 
 ---
 
@@ -202,6 +204,40 @@ the run path.
 sequence, so period 7 of rung 2 is differenced against period 7 of rung 0 and the
 differences are then averaged. Averaging session means instead would discard that structure.
 
+### 4.1.1 This is the same D as the 2026-08-04 slides — but not the same baseline sample
+
+The convention is identical, and the pipeline reproduces the deck exactly:
+
+| | slides (Table 6 / Table 7) | recomputed here from the same runs |
+|---|---|---|
+| market 7, selling | 0.434 (8 periods) | **0.434** (n = 8) |
+| market 8, selling | 0.379 (12 periods) | **0.378** (n = 12) |
+| control, buying | 0.41 (n = 33) | **0.413** (n = 33) |
+| control, selling | 0.40 (n = 20) | **0.401** (n = 20) |
+
+The deck's own arithmetic confirms the denominator. Control selling: mean price 243.9,
+"From RE" +59.9 ⇒ RE = 184; "From PI" −40.1 ⇒ PI = 284; and (243.9 − 284) / (184 − 284) =
+0.401. Control buying: RE = PI = 378.2, v̄ weighted over the two markets =
+(18·260 + 15·300)/33 = 278.2, and (319.5 − 278.2)/100 = 0.413. Note that the deck's "From
+PI" column is the *theory* PI price, which on these markets' buying side coincides with RE —
+it is **not** the v̄ that D divides by.
+
+**So any difference between this document and the deck is a difference of sample, not of
+method.** The deck's control figures pool **seeds 42/43/44**, which is the control arm as
+designed and run. This document's rung 0 uses the **seed-matched** subset — m7 {42, 45} and
+m8 {42, 44} — because a paired contrast has to difference like against like, and those are
+the seeds the ladder sessions were run on.
+
+| rung-0 baseline | buy | sell |
+|---|---|---|
+| control arm as published, seeds 42/43/44 | 0.413 (n = 33) | 0.401 (n = 20) |
+| **this document, seed-matched** | **0.342** (n = 18) | **0.534** (n = 17) |
+
+The sell side moves most: m7 seed 45 scores 0.993 over 5 selling periods and is in the
+ladder's baseline but not the deck's, while seeds 43/44 are in the deck's but not here.
+Quote the deck's numbers for the control arm's *level*; quote this document's for the
+ladder's *differences*. They are not interchangeable.
+
 ### 4.2 The ladder, period by period, seed 42
 
 Both markets have all five rungs on this seed. Every cell is one period's `D`.
@@ -299,7 +335,37 @@ not identified by this design.
 (−0.230, 4 of 16). Read that as a ceiling, not a regression: the sell side is finished at
 rung 2 and the fixedness sentence adds nothing there while it is busy fixing the buy side.
 
-### 4.6 Efficiency and who ends up holding
+### 4.6 Against the concession result
+
+The 2026-08-04 deck's Table 7 holds net informed pressure fixed at −6 across six
+informed-selling cells and finds that **concession** — whether a counterparty is already
+willing to trade at the target — predicts discovery where head count and distance do not.
+Every conceded cell is at least 0.97 (mean 1.10); markets 7 and 8, the two unconceded
+cells, sit at **0.434** and **0.379**.
+
+Those same two cells, on the ladder:
+
+| selling cell | baseline (deck) | rung 2 | rung 3 |
+|---|---:|---:|---:|
+| market 7 | 0.434 | **1.012** (n = 9) | 0.626 (n = 8) |
+| market 8 | 0.379 | **1.000** (n = 8) | 0.889 (n = 9) |
+
+At rung 2 both unconceded cells land inside the conceded range. That does not overturn the
+concession result — which is a statement about the baseline information condition, and
+still holds there — but it bounds it: **concession is not a structural ceiling on what the
+institution can discover, it is a substitute for information the agents do not have.**
+Supplying the missing piece (which years hand out cards, in both directions) gets an
+unconceded cell to RE without any counterparty conceding anything.
+
+The mechanism is consistent with the concession story rather than against it. A conceded
+cell has someone who will sell at the target for their own reasons; an unconceded cell needs
+an uninformed agent to sell *below its own valuation*, which requires believing that someone
+else knows better. Rung 2 is exactly what makes that belief available: a blank card in an
+announced card year means "I am one of the uninformed" and nothing else.
+
+Rung 3's fall-back here (0.626 and 0.889) is the ceiling effect of §4.5, not a reversal.
+
+### 4.7 Efficiency and who ends up holding
 
 | rung | E% (allocative) | TE% (of the achievable surplus) | insider advantage |
 |---|---|---|---|
