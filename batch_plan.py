@@ -137,9 +137,9 @@ def control_arm(markets: tuple[int, ...] = CONTROL_ARM_MARKETS):
 #
 # Waves exist because of the endpoint, not the science. A session holds at most
 # `broadcast_workers` requests in flight, so sessions x W is a structural ceiling against
-# Bailian's tolerated 50-80: the rounds arm alone is 6 x 12 = 72, and all thirteen at once
-# would be 156. W stays at 12 in every file because the 26 sessions these are read against
-# all ran at 12.
+# Bailian's tolerated 50-80: the rounds arm alone is 6 x 12 = 72, and all twenty-one
+# unrun sessions at once would be 252. W stays at 12 in every file because the 26 sessions
+# these are read against all ran at 12.
 PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
     # Truncation. Six rounds per period on the six seeds the control arm already ran, so
     # the comparison is paired period by period. ~13h and ~$3.9 a session, measured on the
@@ -159,6 +159,25 @@ PROPOSED_WAVES: dict[str, tuple[str, ...]] = {
     # disclosure is the only difference. 3 x 12 = 36 in flight; one wave.
     # docs/disclosure-treatment.md.
     "disclosed": ("m4_disclosed_paper", "m7_disclosed_s42", "m8_disclosed_s42"),
+    # The disclosure LADDER, tiers 2 and 3, one wave each (docs/disclosure-treatment.md).
+    # Tier 2 announces each year's card condition in both directions, so a blank card
+    # stops being ambiguous; tier 3 adds that the card holders never change. Both carry an
+    # explicit earnings objective in all three prompts and emphatic wording for the card's
+    # certainty, so tier2 - tier1 is a bundle of three dials and only tier3 - tier2 is a
+    # single one — the ladder is a dose-response, not four clean contrasts.
+    #
+    # Two markets x two seeds. All four seeds have completed baselines and two of the four
+    # also have a completed tier-1 rung, so seeds 42 carry the full four-rung ladder. The
+    # seeds pool to 9 buy / 9 sell on each market; the scenario headers state why choosing
+    # them on that is blocking rather than sample selection.
+    #
+    # 4 x 12 = 48 in flight per wave; all eight at once would be 96, past the ceiling,
+    # which is why this is two waves and not one. ~$10.5 and ~8 h each, from the tier-1
+    # sessions' measured 4,269-4,545 calls and $2.47-$2.81.
+    "ladder2": ("m7_ladder2_s42", "m7_ladder2_s45",
+                "m8_ladder2_s42", "m8_ladder2_s44"),
+    "ladder3": ("m7_ladder3_s42", "m7_ladder3_s45",
+                "m8_ladder3_s42", "m8_ladder3_s44"),
 }
 
 

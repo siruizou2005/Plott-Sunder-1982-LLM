@@ -1160,3 +1160,41 @@ def test_the_seeds_the_arm_actually_runs_are_imbalanced_and_that_is_recorded():
         late[s] = sum(py) / len(py) - sum(px) / len(px)
     assert late[43] > 3 and late[44] > 3, "seeds 43 and 44 put the sell periods late"
     assert late[42] < 0, "seed 42 puts them early"
+
+
+def test_the_seeds_the_ladder_runs_are_balanced_and_that_is_a_choice():
+    """The ladder waves run m7 on {42, 45} and m8 on {42, 44}, and those seeds WERE chosen
+    on what they draw. That is the opposite of the arm above, so the reason has to be
+    written down beside the numbers.
+
+    scenarios/m7_control.yaml refuses to filter seeds on the buy/sell balance, and the
+    refusal is right for what it covers: the control arm reports a LEVEL — discovery
+    against 1.0 — and choosing seeds on the variable under study biases that estimate.
+
+    The ladder reports a paired within-market DIFFERENCE instead. The same drawn sequence
+    appears on both sides of every comparison, because Market.redrawn keys its RNG on the
+    seed and the treatment is a prompt. Balancing the states therefore changes the
+    precision of the paired difference and not its expectation: it is blocking on a
+    pre-treatment covariate. Pinned here so the argument does not evaporate between
+    running the sessions and reporting them, and so a seed swap has to face it.
+    """
+    def insider_states(m, seed):
+        r = m.redrawn(seed)
+        return [r.sequence_states[p - 1] for p in range(1, r.n_periods + 1)
+                if r.sequence_info[p - 1] == "insider"]
+
+    ladder = {7: (42, 45), 8: (42, 44)}
+    per_seed = {n: {s: insider_states(MARKETS[n], s) for s in seeds}
+                for n, seeds in ladder.items()}
+
+    # Each seed near-balanced on its own, and each market's pair exactly 9/9.
+    assert [(v.count("X"), v.count("Y")) for v in per_seed[7].values()] == [(5, 4), (4, 5)]
+    assert [(v.count("X"), v.count("Y")) for v in per_seed[8].values()] == [(6, 3), (3, 6)]
+    for n, seeds in ladder.items():
+        buys = sum(v.count("X") for v in per_seed[n].values())
+        sells = sum(v.count("Y") for v in per_seed[n].values())
+        assert (buys, sells) == (9, 9), f"market {n} pools to {buys}/{sells}, not 9/9"
+
+    # Seed 42 is in both markets' pairs because it is the only one with a completed
+    # tier-1 rung, which is what makes the full four-rung ladder exist anywhere.
+    assert all(42 in seeds for seeds in ladder.values())

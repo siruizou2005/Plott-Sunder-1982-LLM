@@ -78,8 +78,12 @@ def validate(scenario: str = typer.Option(..., "--scenario", "-s"),
 
     from .prompts import system_prompt
     sp = system_prompt(seat, cfg.rules, cfg.market_spec)
-    leaks = [w for w in ("probability", "Probability", "rational expectation",
-                         "equilibrium") if w in sp]
+    # The same list tests/test_prompts.py enforces, so `validate` and the suite agree on
+    # what a leak is. A word that only the suite catches is a word this command endorses.
+    leaks = [w for w in ("probability", "probabilities", "probable", "likelihood",
+                         "expected value", "bayes", "chance", "odds", "random sample",
+                         "rational expectation", "equilibrium", "insider", "efficiency")
+             if w in sp.lower()]
     if leaks:
         console.print(f"[red]PROMPT LEAK: system prompt contains {leaks}[/red]")
     else:
@@ -88,6 +92,29 @@ def validate(scenario: str = typer.Option(..., "--scenario", "-s"),
     console.print(f"  system prompt for {seat}: {len(sp):,} chars")
     if show_prompt:
         console.print("\n" + sp)
+        _show_per_period_lines(console, cfg, seat)
+
+
+def _show_per_period_lines(console, cfg, seat: str) -> None:
+    """The parts of a prompt that live in the USER message, not the system prompt.
+
+    `validate` used to render the system prompt alone, which hides the treatments that
+    write per-period text — the disclosure ladder's card-year announcement is a per-year
+    line and was invisible here, and so is the memo tier's year-end task. Both are the
+    thing a reader most wants to check before spending money on a wave.
+    """
+    from .prompts.brief import _clue_line, _period_end_task
+
+    mkt = cfg.market_spec
+    card = "0101010101" if mkt.imperfect else mkt.states[0]
+    console.print("\n[bold]== the year's card line, in each information condition ==[/bold]")
+    for info, c, label in (("none", None, "no-card year"),
+                           ("insider", None, "card year, blank card"),
+                           ("insider", card, "card year, lettered card")):
+        console.print(f"\n[dim]-- {label} --[/dim]")
+        console.print(_clue_line(c, info, cfg.rules, mkt))
+    console.print(f"\n[bold]== the year-end task ({cfg.rules.period_end_style}) ==[/bold]\n")
+    console.print(_period_end_task(cfg.rules))
 
 
 def _truncate_to_checkpoint(log_path: Path, next_event_id: int) -> int:

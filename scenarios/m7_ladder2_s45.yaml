@@ -1,0 +1,98 @@
+# Market 7, tier 2 of the disclosure ladder. Identical to m7_ctrl_45
+# -- same market, same seed, same drawn sequence, same model, same three thinking
+# budgets, same W=12 -- except for the rules flagged below. The ladder is
+# docs/disclosure-treatment.md; this file is market 7's seed-45 rung 2 of it.
+#
+# Market 7 is where the free-rider identity bites and where tier 1 went BACKWARDS:
+# -0.070 on the buy side and -0.310 on the sell side against its baseline. The reading in
+# docs/disclosure-results.md is that disclosure deleted an ambiguity that had been doing
+# useful work. A baseline agent watching the price climb to 340 has two explanations and
+# cannot separate them -- someone holds a letter, or someone simply values it more -- and
+# BOTH point at following the price. Told the three tables, it learns 260 is the highest
+# uninformed value, stops reading 340 as "someone values it more", and needs one further
+# step to read it at all: a price above every uninformed valuation can only mean someone
+# is informed. Market 7's agents did not take it. They stopped at "260 is the ceiling, I
+# will not chase" -- their drift from their own arithmetic fell from 95 francs to 36 and
+# went flat within the period, types I and II landing within 5 francs of it.
+#
+# Tier 2 removes what is left ambiguous about a BLANK card. Every year, in both
+# directions, agents are told whether clue cards that are not blank were handed out, so a
+# blank card in a card year now means "I am one of the uninformed" instead of "either I am
+# uninformed or nobody is informed". That is the premise the price-based inference needs
+# and the one the tier-1 section explicitly withheld.
+#
+# Two further dials come with the tier and are NOT separable from it: tier 2 minus tier 1
+# is a bundle of three, and only tier 3 minus tier 2 is a single dial.
+# objective_profit_max states an earnings objective in the turn, broadcast AND reflection
+# prompts -- the baseline states one only in the turn prompt, so a broadcast reply and a
+# year-end note are written without any. clue_is_certain states no new fact at all: the
+# instructions already say a lettered card is always correct and the year's card line
+# already says the dividend WILL be paid; it removes the room to hedge. Both are held
+# constant across tiers 2 and 3, so the ladder's top step stays clean.
+#
+# Run on m7_ctrl_45's seed: Market.redrawn keys the sequence RNG on
+# "ps1982-m7-seq-45", so this session draws the same fourteen states its pairs drew
+# (XYYXXXYXYYYYXY), and the comparison is PAIRED period by period against
+# runs/control/m7_ctrl_45.
+#
+# The nine informed periods split 4 buy / 5 sell on this draw. The two seeds this
+# market runs were chosen so that they pool to 9 buy / 9 sell, which is a departure from
+# scenarios/m7_control.yaml's refusal to filter seeds on the buy/sell balance -- and is
+# defensible for the reason that refusal does not cover. That refusal is about a reported
+# LEVEL, where a selected sample biases the estimate. This is a paired within-market
+# contrast: the same drawn sequence appears on both sides of every comparison, so the
+# state balance moves the precision of the paired difference and not its expectation. It
+# is blocking on a pre-treatment covariate, not sample selection. There is no tier-1
+# rung on this seed, so this session is read against the baseline and against its own
+# twin at the other tier.
+run_name: ladder2/m7_lad2_45
+seed: 45
+sequence_preset: random_prior
+market: 7
+sessions: 1
+max_rounds_per_period: 3
+# This wave is four sessions x 12 workers = 48 in flight, inside Bailian's tolerated
+# 50-80. The two ladder waves run SEPARATELY: all eight at once would be 96, past it.
+broadcast_workers: 12
+
+rules:
+  price_improvement: true          # baseline; see market3_no_improvement.yaml
+  elicit_beliefs: true
+  broadcast_reason: true
+  market_log_window: 0             # whole period, like market 5's photocopied log
+  period_end_notes: 2
+  trade_notes: 3
+  not_selected_window: 5
+  # The rung. pydantic drops unknown keys silently, so a typo here would run a LOWER rung
+  # under this run_name -- tests/test_scenarios.py asserts every flag actually loads from
+  # this file, AND that the ones this rung does not set are still off, which is the only
+  # thing separating this file from its twin at the other tier.
+  disclose_structure: true         # tier 1, unchanged
+  disclose_card_years: true        # tier 2: both directions, every year
+  objective_profit_max: true       # rides with tiers 2 and 3; see above
+  clue_is_certain: true            # rides with tiers 2 and 3; states no new fact
+  # announce_no_info_period is left UNSET on purpose: disclose_card_years announces the
+  # same fact in the no-card direction, and Config refuses an explicit false beside it.
+  # period_end_style is left at "note" on purpose too -- the memo tier is orthogonal to
+  # this ladder, and folding it in would make tier 2 minus tier 1 a bundle of four.
+agents:
+  - kind: llm
+    model: deepseek-v4-flash
+    base_url: $DASHSCOPE_BASE_URL      # Bailian; same weights, ~half the price
+    api_key_env: DASHSCOPE_API_KEY
+    temperature: 0.7
+    thinking: true                 # turn decisions reason
+    broadcast_thinking: true       # measured: with thinking off, 67% of broadcast
+                                   # replies cited the wrong expected value; see
+                                   # scenarios/market3_broadcast_fast.yaml
+    max_output_tokens: 8192        # reasoning and the JSON share this budget; at 2048,
+                                   # 12% of turn calls truncated mid-string
+    broadcast_max_output_tokens: 8192  # 512 truncated 29% of broadcasts to nothing;
+                                       # see scenarios/m7_control_r6_s42.yaml
+    reflect_thinking: true          # notes reason too; see docs/design-deltas.md 5.2
+    reflect_max_output_tokens: 3000 # at 400 and 1200 the note itself truncated away
+
+pricing:
+  input_per_mtok: 0.1408
+  cached_input_per_mtok: 0.0282
+  output_per_mtok: 0.2817
