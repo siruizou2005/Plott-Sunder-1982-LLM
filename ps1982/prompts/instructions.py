@@ -48,6 +48,21 @@ The currency of this market is francs. All trading and earnings are in francs. E
 is worth ${franc_to_usd} to you. Do not reveal this number to anyone.\
 """
 
+# Rules.objective_profit_max. Its own block of the SHARED preamble, so it reaches the
+# turn, broadcast and reflection prompts alike — the baseline states its purpose only in
+# _TURN_TASK, which is the paper's own wording and therefore never reaches a broadcast
+# reply or a year-end note. Placed after _GENERAL and before _EARNINGS: it must not sit
+# between the earnings block and the mechanism, because _EARNINGS_DISCLOSED ("further
+# down") and _FACT_HOW_MANY_DISCLOSED ("the section above") both encode that ordering.
+_OBJECTIVE = """\
+== YOUR OBJECTIVE ==
+
+Your objective is to earn as many francs as you can, over the whole experiment rather
+than in any single year. Judge every decision — what to quote, what to accept, and what
+to let pass — by what it does to your own francs, and take the one that leaves you with
+the most.\
+"""
+
 _EARNINGS = """\
 == YOUR PRIVATE INFORMATION AND RECORD ==
 
@@ -104,7 +119,19 @@ Also at the beginning of each year, before trading starts, every investor receiv
 card. A clue card carries one of {n_options} things:
 {card_lines}
 
-A clue card that carries a letter is always correct.\
+{certainty}\
+"""
+
+# The two fillings of _CLUE_PERFECT's {certainty} slot. _CERTAINTY_PLAIN must stay
+# byte-identical to the pre-slot sentence. _CERTAINTY_EMPHATIC (Rules.clue_is_certain)
+# states no new fact — the card already was always correct — it removes the room an agent
+# has to hedge on it. It CONTAINS the plain sentence verbatim, so every guard written
+# against the baseline wording still passes under the flag.
+_CERTAINTY_PLAIN = "A clue card that carries a letter is always correct."
+_CERTAINTY_EMPHATIC = """\
+A clue card that carries a letter is always correct. This has no exceptions and no
+qualifications: if your card carries a letter, the dividend that letter names is the one
+that WILL be paid at the end of this year. You may treat it as settled.\
 """
 
 # Market 1's imperfect clue (footnote 5). Described as a physical sampling device, because
@@ -155,11 +182,62 @@ You are a Type {own} investor. No one is told which type any OTHER investor is.
 
 In a year in which clue cards that are not blank are handed out, exactly {informed} of
 the {per_type} investors of each type receive such a card; the other {uninformed} receive
-blanks. No one is told which investors they are, or whether they are the same investors
+blanks. {tail}\
+"""
+
+# The tail of the disclosure section's last paragraph: one literal per (fixedness, card
+# years) combination, i.e. per rung of the ladder. Four hand-wrapped literals rather than
+# three composable sentences, for the same reason _EARNINGS_PRIVATE/_EARNINGS_DISCLOSED
+# and _IMPROVEMENT_ON/_OFF are literals — the paragraph is hard-wrapped and its first line
+# CONTINUES "blanks. ", so a sentence swapped into the middle has to be re-wrapped anyway.
+#
+# (False, False) is byte-identical to the pre-slot paragraph. The baseline and the three
+# completed tier-1 sessions were prompted with exactly these bytes, and the digests at the
+# top of tests/test_prompts.py are what holds them there.
+#
+# Every sentence is checked against the engine rather than asserted. Fixedness:
+# Market.insiders is the first `insiders_per_type` seats of each type block, and neither
+# the period nor `redrawn` moves it — test_fixedness_disclosure_matches_the_engine pins
+# the wording to the dealing. Card years: `_clue_line` reports the condition in both
+# directions, every year, in the same words for every seat, under disclose_card_years.
+#
+# What no rung states: WHICH investors hold the cards. The first clause of every tail
+# below says so, and there is no flag that removes it.
+_TAIL_HIDDEN_HIDDEN = """\
+No one is told which investors they are, or whether they are the same investors
 from year to year. There may also be years in which every investor's card is blank, and
 no one is told which years are which: a blank card looks the same to its holder either
 way.\
 """
+
+_TAIL_HIDDEN_YEARS = """\
+No one is told which investors they are, or whether they are the same investors
+from year to year. There may also be years in which every investor's card is blank. Each
+year, along with your own card, you are told whether clue cards that are not blank were
+handed out that year.\
+"""
+
+_TAIL_FIXED_HIDDEN = """\
+No one is told which investors they are, but they are the same investors in
+every year in which such cards are handed out. There may also be years in which every
+investor's card is blank, and no one is told which years are which: a blank card looks
+the same to its holder either way.\
+"""
+
+_TAIL_FIXED_YEARS = """\
+No one is told which investors they are, but they are the same investors in
+every year in which such cards are handed out. There may also be years in which every
+investor's card is blank. Each year, along with your own card, you are told whether clue
+cards that are not blank were handed out that year.\
+"""
+
+# (disclose_insiders_fixed, disclose_card_years) -> tail.
+_DISCLOSURE_TAILS = {
+    (False, False): _TAIL_HIDDEN_HIDDEN,
+    (False, True): _TAIL_HIDDEN_YEARS,
+    (True, False): _TAIL_FIXED_HIDDEN,
+    (True, True): _TAIL_FIXED_YEARS,
+}
 
 _COMMON_KNOWLEDGE = """\
 == WHAT EVERY INVESTOR KNOWS ==
@@ -291,7 +369,7 @@ def _word(n: int) -> str:
     return _NUMBER_WORD.get(n, str(n))
 
 
-def _mechanism(market: Market) -> str:
+def _mechanism(market: Market, certain: bool = False) -> str:
     """The bingo cage, then the clue card — the only two devices an agent may reason from."""
     cage = []
     for state, lo, hi in market.cage_ranges:
@@ -315,15 +393,23 @@ def _mechanism(market: Market) -> str:
                          f"be paid at the end of this year;")
         lines.append(f"  ({_ROMAN[len(market.states)]:<4s}) a blank       — this tells you "
                      f"nothing about which dividend will be paid.")
+        # The imperfect branch above never reaches this, so market 1 cannot be told its
+        # sample is certain even if a Rules is built by hand: Config refuses the flag
+        # there, and the code path could not honour it anyway.
         clue = _CLUE_PERFECT.format(n_options=_word(len(market.states) + 1),
-                                    card_lines="\n".join(lines))
+                                    card_lines="\n".join(lines),
+                                    certainty=(_CERTAINTY_EMPHATIC if certain
+                                               else _CERTAINTY_PLAIN))
     return f"{head}\n\n{clue}"
 
 
-def _disclosure(market: Market, seat: str) -> str:
+def _disclosure(market: Market, seat: str, rules: Rules) -> str:
     """The structural-disclosure section. Every number is derived from the Market —
     type count, per-type roster, informed count, the dividend table — so the section is
-    correct for any market Config._check lets it run on."""
+    correct for any market Config._check lets it run on.
+
+    The closing paragraph's tail is the ladder: which of the two facts the higher rungs
+    disclose are stated here, and which stay withheld."""
     width = max(len(s) for s in market.states)
     blocks = []
     for t, d in market.dividends.items():
@@ -340,7 +426,8 @@ def _disclosure(market: Market, seat: str) -> str:
         informed=_word(market.insiders_per_type),
         uninformed=_word(market.n_per_type - market.insiders_per_type),
         own=market.seat_type[seat],
-        type_lines="\n".join(blocks))
+        type_lines="\n".join(blocks),
+        tail=_DISCLOSURE_TAILS[(rules.disclose_insiders_fixed, rules.disclose_card_years)])
 
 
 def _common_knowledge(market: Market, disclose: bool) -> str:
@@ -354,11 +441,16 @@ def _common_knowledge(market: Market, disclose: bool) -> str:
                                     fact_lines="\n".join(facts))
 
 
-def _preamble(market: Market, seat: str, name: str | None, disclose: bool) -> list[str]:
+def _preamble(market: Market, seat: str, name: str | None, rules: Rules) -> list[str]:
     """The market knowledge every prompt shares: who you are, what you earn, how it is
     decided, and what everyone knows. Identical across turn, broadcast and reflection —
     a reflection that lacked the mechanism block once left 50/50 as the only inference
-    available, and that wrong belief then became durable memory."""
+    available, and that wrong belief then became durable memory.
+
+    Every treatment that varies the market knowledge belongs here rather than in one of
+    the three task blocks, for that same reason: a fact stated only on a turn is a fact
+    the agent does not have when it answers a broadcast or writes a note."""
+    disclose = rules.disclose_structure
     d = market.dividends[market.seat_type[seat]]
     width = max(len(s) for s in market.states)
     lines = "\n".join(f"    If the {s:<{width}s}-dividend is paid:  {d[s]} francs per certificate"
@@ -368,16 +460,20 @@ def _preamble(market: Market, seat: str, name: str | None, disclose: bool) -> li
     parts = [
         _GENERAL.format(n_word=_word(market.n_agents), n_periods=market.n_periods,
                         seat=name or seat, franc_to_usd=market.franc_to_usd),
+    ]
+    if rules.objective_profit_max:
+        parts.append(_OBJECTIVE)
+    parts += [
         _EARNINGS.format(n_word=_word(len(market.states)), dividend_lines=lines,
                          privacy=privacy,
                          certs=INITIAL_CERTS, cash=INITIAL_CASH, fixed_cost=FIXED_COST),
-        _mechanism(market),
+        _mechanism(market, rules.clue_is_certain),
     ]
     # After the mechanism: the section leans on the clue-card vocabulary defined there,
     # and both _EARNINGS_DISCLOSED ("further down") and _FACT_HOW_MANY_DISCLOSED ("the
     # section above") encode this ordering.
     if disclose:
-        parts.append(_disclosure(market, seat))
+        parts.append(_disclosure(market, seat, rules))
     parts.append(_common_knowledge(market, disclose))
     return parts
 
@@ -387,7 +483,7 @@ def system_prompt(seat: str, rules: Rules, market: Market, name: str | None = No
     # dividend row. S01..S12 must not reach the model — the numbering encodes the type
     # blocks and the insider positions.
     schema = ", ".join(f'"{s}": <number between 0 and 1>' for s in market.states)
-    parts = _preamble(market, seat, name, rules.disclose_structure) + [
+    parts = _preamble(market, seat, name, rules) + [
         _TRADING.format(improvement_rule=(_IMPROVEMENT_ON if rules.price_improvement
                                           else _IMPROVEMENT_OFF)),
         _TURN_TASK,
@@ -419,7 +515,7 @@ Reply with a single json object and nothing else:
 def broadcast_system_prompt(seat: str, rules: Rules, market: Market,
                             name: str | None = None) -> str:
     """Same market knowledge, different task: answer one quote, right now."""
-    parts = _preamble(market, seat, name, rules.disclose_structure) + [
+    parts = _preamble(market, seat, name, rules) + [
         _TRADING.format(improvement_rule=(_IMPROVEMENT_ON if rules.price_improvement
                                           else _IMPROVEMENT_OFF)),
         "== WHAT YOU DO NOW ==\n\n"
@@ -455,5 +551,5 @@ def reflect_system_prompt(seat: str, rules: Rules, market: Market,
     spending 171 reasoning tokens doing it. The missing block was the cause, not the
     missing reasoning.
     """
-    return "\n\n".join(_preamble(market, seat, name, rules.disclose_structure)
+    return "\n\n".join(_preamble(market, seat, name, rules)
                        + [_REFLECT_TASK])

@@ -196,14 +196,28 @@ def _clue_line(card: str | None, info: str, rules: Rules, market) -> str:
         lines.append(f"  Your clue card carries the marks {card}. It was drawn from the box "
                      f"matching this year's dividend, but either box can produce any row.")
     else:
+        # Rules.clue_is_certain states no new fact: the instructions already say a card
+        # carrying a letter is always correct. Config refuses the flag on market 1, and
+        # the imperfect branch above is why it could not reach that market anyway.
+        certain = (" A card that carries a letter is never wrong, so treat this as certain."
+                   if rules.clue_is_certain else "")
         lines.append(f"  Your clue card carries the letter {card}. The {card}-dividend WILL "
-                     f"be paid at the end of this year.")
-    # §14.4 treatment arm only. The faithful baseline says nothing, because market 3's
-    # subjects were not told how many investors held a lettered card.
+                     f"be paid at the end of this year.{certain}")
+    # Two treatments write here. §14.4's announce_no_info_period speaks only in the "none"
+    # direction; the disclosure ladder's disclose_card_years speaks in both. They share the
+    # "none" sentence and therefore share one branch, so no configuration can print it
+    # twice — and Config refuses announce_no_info_period: false beside the ladder flag,
+    # which is the only way the two could have disagreed.
     announce = (market.announce_no_info if rules.announce_no_info_period is None
                 else rules.announce_no_info_period)
-    if announce and info == "none":
-        lines.append("  This year no investor has received a lettered clue card.")
+    if info == "none":
+        if announce or rules.disclose_card_years:
+            lines.append("  This year no investor has received a lettered clue card.")
+    elif rules.disclose_card_years:
+        # Deliberately silent on HOW MANY, which keeps the sentence true of an "all"
+        # period as well as an "insider" one and keeps it identical for every seat: an
+        # agent holding a letter learns nothing here that a blank-card holder does not.
+        lines.append("  This year lettered clue cards have been handed out.")
     return "\n".join(lines)
 
 

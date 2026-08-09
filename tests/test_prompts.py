@@ -680,24 +680,40 @@ def _section(market, rules):
     return text[text.index(DISC_HEADER):text.index("== WHAT EVERY INVESTOR KNOWS ==")]
 
 
+def _flat(text: str) -> str:
+    """Whitespace collapsed to single spaces.
+
+    The section is hard-wrapped at ~87 columns and the four tails wrap differently, so a
+    sentence sits on one line in one rung and straddles two in the next. Asserting on the
+    raw bytes would make every guard here a test of the line breaks.
+    """
+    return " ".join(text.split())
+
+
 @pytest.mark.parametrize("market", DISC_MARKETS, ids=lambda m: f"m{m.number}")
 def test_each_rung_adds_exactly_one_fact(market):
     """The three rungs differ in two sentences and nothing else: whether the holders are
     said to be the same investors, and whether the card years are said to be announced."""
-    one, two, three = (_section(market, r) for r in (DISC, TIER2, TIER3))
+    one, two, three = (_flat(_section(market, r)) for r in (DISC, TIER2, TIER3))
 
-    # Fixedness: withheld on tiers 1 and 2, stated on tier 3 — and never as identities.
+    # Identities: withheld at every rung. There is no flag that removes this clause.
+    for s in (one, two, three):
+        assert "No one is told which investors they are" in s
+
+    # Fixedness: withheld on tiers 1 and 2, stated on tier 3.
     for s in (one, two):
-        assert "or whether they are the same investors" in s
-        assert "they are the same investors in" not in s
-    assert "or whether they are the same investors" not in three
-    assert "they are the same investors in" in three
+        assert "or whether they are the same investors from year to year" in s
+        assert "they are the same investors in every year" not in s
+    assert "or whether they are the same investors from year to year" not in three
+    assert "they are the same investors in every year in which such cards are handed out" \
+        in three
 
     # Card years: withheld on tier 1, announced on tiers 2 and 3.
     assert "no one is told which years are which" in one
+    assert "a blank card looks the same to its holder either way" in one
     for s in (two, three):
         assert "no one is told which years are which" not in s
-        assert "you are told whether clue cards that are not blank" in s
+        assert "you are told whether clue cards that are not blank were handed out" in s
 
 
 @pytest.mark.parametrize("market", DISC_MARKETS, ids=lambda m: f"m{m.number}")
@@ -746,6 +762,92 @@ def test_fixedness_disclosure_matches_the_engine(market):
             seen.add(frozenset(s for s, c in cards.items() if c is not None))
     assert len(seen) == 1, f"market {market.number} deals letters to different seats"
     assert seen.pop() == set(market.insiders)
+
+
+def test_card_year_announcement_runs_in_both_directions():
+    """Tier 2's whole content is that a blank card becomes informative, which needs the
+    announcement in BOTH directions — a sentence only in the 'none' years would leave an
+    insider year silent and indistinguishable from the baseline."""
+    none = _brief(rules=TIER2, market=MARKETS[4], info="none", card=None)
+    ins = _brief(rules=TIER2, market=MARKETS[4], info="insider", card=None)
+    assert none.count("This year no investor has received a lettered clue card.") == 1
+    assert "lettered clue cards have been handed out" not in none
+    assert ins.count("This year lettered clue cards have been handed out.") == 1
+    assert "no investor has received" not in ins
+
+
+def test_card_year_announcement_cannot_double_print():
+    """announce_no_info_period and disclose_card_years write the same sentence in the
+    'none' direction. They share one branch, so no configuration prints it twice."""
+    both = Rules(disclose_structure=True, disclose_card_years=True,
+                 announce_no_info_period=True)
+    text = _brief(rules=both, market=MARKETS[4], info="none", card=None)
+    assert text.count("This year no investor has received a lettered clue card.") == 1
+
+
+def test_card_year_announcement_is_silent_below_tier_two():
+    """Markets 4, 7 and 8 do not announce their no-information periods, so neither
+    sentence may appear at the baseline or at tier 1 — otherwise the completed sessions
+    were prompted with something this ladder invented."""
+    for rules in (RULES, DISC):
+        for info in ("none", "insider"):
+            text = _brief(rules=rules, market=MARKETS[4], info=info, card=None)
+            assert "no investor has received" not in text
+            assert "lettered clue cards have been handed out" not in text
+
+
+@pytest.mark.parametrize("market,seat", ALL_SEATS, ids=_ids(ALL_SEATS))
+def test_objective_reaches_all_three_prompts_only_under_the_flag(market, seat):
+    """The baseline states its purpose in _TURN_TASK alone, so a broadcast reply and a
+    year-end note are written without one. objective_profit_max goes in the shared
+    preamble, which is the only place that reaches all three — and it is not gated on a
+    market, so every market and seat must render it cleanly."""
+    on = Rules(objective_profit_max=True)
+    for build in (system_prompt, broadcast_system_prompt, reflect_system_prompt):
+        assert OBJECTIVE_HEADER in build(seat, on, market, NAMES[seat])
+        assert OBJECTIVE_HEADER not in build(seat, RULES, market, NAMES[seat])
+    # The paper's own sentence stays: this adds to it rather than replacing it.
+    assert "You are free to make as much profit as you can." in system_prompt(
+        seat, on, market, NAMES[seat])
+    lowered = "\n".join(build(seat, on, market, NAMES[seat]) for build in
+                        (system_prompt, broadcast_system_prompt, reflect_system_prompt)).lower()
+    for word in ("probability", "expected value", "equilibrium", "chance", "odds"):
+        assert word not in lowered, f"m{market.number} {seat} objective block has {word!r}"
+
+
+def test_clue_certainty_strengthens_both_places_and_states_no_new_fact():
+    """clue_is_certain adds no fact — the baseline already says a lettered card is always
+    correct and that the dividend WILL be paid. It removes the room to hedge, in the
+    system prompt and in the year's card line, and it CONTAINS the baseline sentence so
+    every guard written against that wording still holds."""
+    on = Rules(clue_is_certain=True)
+    sys_on = _flat(system_prompt("S01", on, MARKETS[4], NAMES["S01"]))
+    sys_off = _flat(system_prompt("S01", RULES, MARKETS[4], NAMES["S01"]))
+    assert "A clue card that carries a letter is always correct." in sys_on   # baseline
+    assert "A clue card that carries a letter is always correct." in sys_off
+    assert "no exceptions and no qualifications" in sys_on
+    assert "no exceptions and no qualifications" not in sys_off
+
+    card_on = _flat(_brief(rules=on, market=MARKETS[4], info="insider", card="Y"))
+    card_off = _flat(_brief(rules=RULES, market=MARKETS[4], info="insider", card="Y"))
+    for text in (card_on, card_off):
+        assert "Your clue card carries the letter Y. The Y-dividend WILL be paid" in text
+    assert "never wrong, so treat this as certain" in card_on
+    assert "never wrong" not in card_off
+    # A blank card says nothing extra: the flag is about the letter, not the blank.
+    blank = _flat(_brief(rules=on, market=MARKETS[4], info="insider", card=None))
+    assert "never wrong" not in blank
+
+
+@pytest.mark.parametrize("seat", MARKETS[1].seats)
+def test_clue_certainty_cannot_reach_the_imperfect_market(seat):
+    """Config refuses the flag on market 1, but Rules is constructible without Config.
+    The code path has to hold independently, because a hand-built Rules reaching the
+    prompt builders is exactly how a test fixture would get there."""
+    text = _flat(system_prompt(seat, Rules(clue_is_certain=True), MARKETS[1], NAMES[seat]))
+    assert "always correct" not in text
+    assert "no exceptions and no qualifications" not in text
+    assert "Either box can produce any row of marks." in text      # the true wording
 
 
 @pytest.mark.parametrize("flag", ["disclose_card_years", "disclose_insiders_fixed"])
