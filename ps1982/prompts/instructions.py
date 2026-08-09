@@ -538,6 +538,42 @@ what you inferred, what you got wrong, and what you will do differently.
 Reply with the note text only — no json, no headings, no preamble.\
 """
 
+# Rules.period_end_style == "memo".
+#
+# This block is shared by BOTH reflection calls — the year-end one and the one written
+# straight after a trade — because they are given the same system prompt
+# (`agent.reflect_system_text`). So it cannot simply say "rewrite your memo": that
+# instruction would land on every post-trade note as well, where the brief asks for one or
+# two sentences, and the two would contradict each other several times a period. It names
+# both occasions instead and lets the closing line of the brief say which one this is.
+#
+# The load-bearing sentence is the last one in the first paragraph. A memo that merely
+# accumulates is a longer note; a memo that REPLACES its predecessor forces the agent to
+# decide each year what is still worth carrying, which is what makes it continuous and
+# what makes its length honest.
+_REFLECT_MEMO_TASK = """\
+== WHAT YOU DO NOW ==
+
+You keep ONE private memo. No one else will ever read it. It is the only thing you carry
+forward from year to year, and you will be shown it on every turn you take, so it has to
+hold everything you want your later self to know: what you have worked out about this
+market, what the prices have told you and where you read them wrongly, the rules you now
+trade by, and what you are still unsure of.
+
+You write in two situations, and the last line of the message you have just been given
+says which one you are in now.
+
+  - Straight after a trade. Add a short remark of one or two sentences about the trade
+    you just made and what you will watch for next. You are not rewriting the memo here.
+
+  - At the end of a market year. Write your memo out again in full. Carry forward
+    everything that is still true, revise what this year has changed, and drop what you
+    now know to be wrong. What you write REPLACES your previous memo completely: anything
+    you leave out is gone, and you will not see it again.
+
+Reply with the text only — no json, no headings, no preamble.\
+"""
+
 
 def reflect_system_prompt(seat: str, rules: Rules, market: Market,
                           name: str | None = None) -> str:
@@ -550,6 +586,9 @@ def reflect_system_prompt(seat: str, rules: Rules, market: Market,
     on the probe run, reflections still put type II at 225 and type III at 150 while
     spending 171 reasoning tokens doing it. The missing block was the cause, not the
     missing reasoning.
+
+    One prompt serves both reflection calls, so the task block has to cover both. See
+    _REFLECT_MEMO_TASK.
     """
-    return "\n\n".join(_preamble(market, seat, name, rules)
-                       + [_REFLECT_TASK])
+    task = _REFLECT_MEMO_TASK if rules.period_end_style == "memo" else _REFLECT_TASK
+    return "\n\n".join(_preamble(market, seat, name, rules) + [task])

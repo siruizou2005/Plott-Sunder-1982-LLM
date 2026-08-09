@@ -8,6 +8,7 @@ Flipping one flag in YAML is enough to run a control arm — no code changes.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -115,6 +116,30 @@ class Rules(BaseModel):
     # How many recent market-log entries an agent sees. 0 = the whole period (markets 5's
     # photocopy handout); 4 reproduces the blackboard, which held "the latest four or five".
     market_log_window: int = 0
+
+    # What an agent writes when a market year ends (docs/design-deltas.md §5.4).
+    #
+    # "note" is the baseline and the default: about 100 words about the year just closed,
+    # written fresh each time, with the last `period_end_notes` of them carried forward.
+    # Measured over two completed sessions the model honours that ask tightly — median 105
+    # words — so fourteen years produce fourteen short, disconnected notes and a window of
+    # two, which means a conclusion reached in year 3 is gone by year 6 unless the agent
+    # happens to restate it.
+    #
+    # "memo" replaces that with ONE standing document the agent rewrites at every year
+    # end. The previous version is in the prompt verbatim and the new one REPLACES it, so
+    # what survives is what the agent chose to carry — which is the point, and is also
+    # what makes the length honest. The window drops to 1 because the memo already
+    # contains its own history; Config._check enforces that rather than trusting the
+    # scenario, since two 800-word memos in every prompt is ~900 wasted tokens per call
+    # across the ~96% of calls that carry notes.
+    period_end_style: Literal["note", "memo"] = "note"
+
+    # The memo's target length, rendered as "between {lo} and {hi} words". Read only under
+    # the memo style. Lives in the brief rather than the system prompt, which is where the
+    # note style's "about 100 words" already sits — the system prompt says what kind of
+    # document it is, the brief says how long this one should be.
+    memo_words: tuple[int, int] = (500, 800)
 
     # How many of its own past notes an agent carries into a prompt (design doc §6 ①).
     #
@@ -269,6 +294,32 @@ class Config(BaseModel):
                 f"clue_is_certain states that a clue card carrying a letter is never wrong; "
                 f"market {self.market}'s clue is a row of marks that either box can "
                 f"produce, so the wording would be false")
+        if self.rules.period_end_style == "memo":
+            # The memo is cumulative: each version is a rewrite of the one before it, so
+            # carrying two hands the agent a superseded copy of its own conclusions
+            # alongside the current one. It is also expensive in the wrong place — notes
+            # ride in the user message, which no prefix cache covers, and they appear in
+            # ~96% of turn and broadcast calls.
+            if self.rules.period_end_notes != 1:
+                raise ValueError(
+                    f"period_end_style 'memo' rewrites one standing document, so exactly "
+                    f"one is carried forward; period_end_notes is "
+                    f"{self.rules.period_end_notes} — set it to 1")
+            # Reasoning shares the reflect budget with the note. At 3,000 and a 100-word
+            # ask, 3% of year-end notes already come back empty having spent the lot
+            # thinking, and one came back truncated mid-clause. A 500-800 word memo is
+            # ~1,100 tokens of body before any reasoning, so 3,000 would truncate it as a
+            # matter of course — and a truncated memo is the seat's whole memory.
+            floor = 4096
+            for a in self.agents:
+                if a.kind == "llm" and a.reflect_max_output_tokens < floor:
+                    raise ValueError(
+                        f"period_end_style 'memo' asks for {self.rules.memo_words[0]}-"
+                        f"{self.rules.memo_words[1]} words, which is ~1,100 output tokens "
+                        f"before the reasoning that shares the same budget; "
+                        f"reflect_max_output_tokens is {a.reflect_max_output_tokens}, "
+                        f"below the {floor} floor — the memo would be truncated and stored "
+                        f"anyway")
         return self
 
     @property

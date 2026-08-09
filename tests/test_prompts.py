@@ -888,3 +888,166 @@ def test_clue_certainty_is_rejected_on_the_imperfect_market():
         Config(market=1, rules={"clue_is_certain": True})
     Config(market=1)                                       # baseline still loads
     Config(market=4, rules={"clue_is_certain": True})      # the lettered markets do too
+
+
+# --------------------------------------------------------- the period-end memo tier
+#
+# "note" is the baseline: about 100 words a year, written fresh, two carried forward.
+# "memo" is one standing document the agent rewrites each year end, and the new version
+# replaces the old one. The digests above cover the note style, so these guards are the
+# positive half — what the memo style says, and where.
+
+MEMO = Rules(period_end_style="memo", period_end_notes=1)
+MEMO_HEADER = "== YOUR MEMO =="
+NOTES_HEADER = "== YOUR NOTES FROM PAST YEAR-ENDS =="
+ONE_NOTE = [{"kind": "period_end", "period": 4, "round": 0, "at": None,
+             "text": "What I know so far: the price sits near 260 unless someone buys hard."}]
+
+
+def _period_end(rules=RULES, market=M3, reflections=()):
+    return build_period_end_brief(
+        market=market, seat="S01", period=5, state=market.states[0], certs=2, cash=10_000,
+        dividend_paid=500, profit=100, reflections=list(reflections), history=[],
+        market_log=[], not_selected=[], names=NAMES, rules=rules)
+
+
+def test_memo_replaces_the_hundred_word_ask_with_a_rewrite():
+    """The year-end ask is what tells a memo agent this is the rewrite occasion — the
+    shared reflect system prompt describes both occasions and defers to this line."""
+    memo = _flat(_period_end(rules=MEMO, reflections=ONE_NOTE))
+    note = _flat(_period_end(rules=RULES, reflections=ONE_NOTE))
+
+    assert "Write your memo out again in full, between 500 and 800 words" in memo
+    assert "this replaces it completely" in memo
+    assert "about 100 words" not in memo
+
+    assert "Write a note to yourself of about 100 words" in note
+    assert "replaces it completely" not in note
+
+    # The range comes from Rules, not from the sentence.
+    wide = _flat(_period_end(rules=Rules(period_end_style="memo", period_end_notes=1,
+                                         memo_words=(300, 400)), reflections=ONE_NOTE))
+    assert "between 300 and 400 words" in wide
+
+
+def test_memo_is_carried_into_every_kind_of_call():
+    """The memo is the seat's whole long-term memory, so it has to be in the turn, the
+    broadcast and the post-trade brief as well as the year-end one — that is the point of
+    rewriting it rather than appending to a list."""
+    builders = [
+        lambda r: _brief(rules=r, reflections=ONE_NOTE),
+        lambda r: build_broadcast_brief(
+            market=M3, seat="S01", period=5,
+            quote={"side": "bid", "price": 250, "seat": "S02"}, info="insider", card="Y",
+            certs=2, cash=10_000, book=EMPTY_BOOK, market_log=[], reflections=ONE_NOTE,
+            history=[], not_selected=[], names=NAMES, rules=r),
+        lambda r: build_trade_feedback_brief(
+            market=M3, seat="S01", period=5, round_no=1, side="buy", price=250,
+            counterparty="S02", info="insider", card="Y", certs=2, cash=10_000,
+            book=EMPTY_BOOK, market_log=[], reflections=ONE_NOTE, history=[],
+            not_selected=[], names=NAMES, rules=r),
+        lambda r: _period_end(rules=r, reflections=ONE_NOTE),
+    ]
+    for build in builders:
+        memo, note = build(MEMO), build(RULES)
+        assert MEMO_HEADER in memo and NOTES_HEADER not in memo
+        assert NOTES_HEADER in note and MEMO_HEADER not in note
+        # The text itself is carried whole either way, and dated only in the note style.
+        assert "the price sits near 260" in memo and "the price sits near 260" in note
+        assert "(year 4)" in note
+        assert "as you last wrote it, at the end of year 4" in _flat(memo)
+
+
+def test_memo_first_year_placeholder_says_there_is_no_memo_yet():
+    """The note style says "you have not finished a market year yet", which under the memo
+    style would be describing the wrong object."""
+    empty = _period_end(rules=MEMO, reflections=[])
+    assert "You have not written your memo yet; this is your first year." in empty
+    assert "You have not finished a market year yet." not in empty
+
+
+def test_memo_post_trade_block_is_untouched():
+    """The tier changes the year-end summary and nothing else. Post-trade notes stay a
+    dated list, because they are still a list."""
+    notes = ONE_NOTE + [{"kind": "trade_feedback", "period": 5, "round": 2,
+                         "at": "after you sold one certificate at 174", "text": "sold high"}]
+    memo = _period_end(rules=MEMO, reflections=notes)
+    assert "== YOUR NOTES AFTER RECENT TRADES ==" in memo
+    assert "(year 5, round 2, after you sold one certificate at 174) sold high" in memo
+
+
+@pytest.mark.parametrize("market,seat", ALL_SEATS, ids=_ids(ALL_SEATS))
+def test_memo_reflect_prompt_names_both_writing_occasions(market, seat):
+    """One system prompt serves BOTH reflection calls, so a block that only said "rewrite
+    your memo" would land on every post-trade note too, where the brief asks for one or
+    two sentences. It has to name both and let the brief say which is which."""
+    text = reflect_system_prompt(seat, MEMO, market, NAMES[seat])
+    flat = _flat(text)
+    assert "You keep ONE private memo" in flat
+    assert "You write in two situations" in flat
+    assert "Straight after a trade" in flat
+    assert "You are not rewriting the memo here." in flat
+    assert "At the end of a market year" in flat
+    assert "REPLACES your previous memo completely" in flat
+    # The note style's block is gone, not merely appended to.
+    assert "You are writing a private note to yourself" not in flat
+
+
+def test_memo_post_trade_brief_still_asks_for_one_or_two_sentences():
+    """The other half of the contract: the system prompt promises the brief will say which
+    occasion this is, so the post-trade brief must keep saying so."""
+    text = build_trade_feedback_brief(
+        market=M3, seat="S01", period=5, round_no=1, side="buy", price=250,
+        counterparty="S02", info="insider", card="Y", certs=2, cash=10_000,
+        book=EMPTY_BOOK, market_log=[], reflections=ONE_NOTE, history=[],
+        not_selected=[], names=NAMES, rules=MEMO)
+    assert "In one or two sentences, note why you made this trade" in _flat(text)
+    assert "Write your memo out again in full" not in text
+
+
+@pytest.mark.parametrize("market,seat", ALL_SEATS, ids=_ids(ALL_SEATS))
+def test_memo_prompts_keep_forbidden_vocabulary_out(market, seat):
+    """The tier changes how much an agent writes, not what it is allowed to know."""
+    text = "\n".join([system_prompt(seat, MEMO, market, NAMES[seat]),
+                      broadcast_system_prompt(seat, MEMO, market, NAMES[seat]),
+                      reflect_system_prompt(seat, MEMO, market, NAMES[seat])])
+    lowered = text.lower()
+    for word in ("probability", "probabilities", "probable", "likelihood",
+                 "expected value", "bayes", "chance", "odds", "random sample",
+                 "rational expectation", "equilibrium", "insider"):
+        assert word not in lowered, f"m{market.number} {seat} memo prompt has {word!r}"
+    for s in market.seats:
+        assert s not in text
+
+
+def test_memo_requires_a_window_of_one():
+    """The memo is cumulative — each version rewrites the one before it — so carrying two
+    hands the agent a superseded copy of its own conclusions beside the current one, and
+    pays ~900 tokens per call in the ~96% of calls that carry notes to do it."""
+    # The default reflect budget is 3,000, below the memo floor, so every memo config has
+    # to raise it — which is the intent, and is why it appears here.
+    roster = [{"kind": "llm", "reflect_max_output_tokens": 8192}]
+    with pytest.raises(ValueError, match="period_end_notes"):
+        Config(market=7, agents=roster,
+               rules={"period_end_style": "memo", "period_end_notes": 2})
+    Config(market=7, agents=roster,
+           rules={"period_end_style": "memo", "period_end_notes": 1})
+    # The default style is unaffected by the default window.
+    Config(market=7)
+
+
+def test_memo_requires_a_reflect_budget_that_can_hold_it():
+    """Reasoning shares the reflect budget. At 3,000 and a 100-word ask, 3% of year-end
+    notes already come back empty having spent the lot thinking; a 500-800 word memo is
+    ~1,100 tokens of body before any reasoning at all, and a truncated memo is the seat's
+    whole memory."""
+    memo = {"period_end_style": "memo", "period_end_notes": 1}
+    with pytest.raises(ValueError, match="reflect_max_output_tokens"):
+        Config(market=7, rules=memo,
+               agents=[{"kind": "llm", "reflect_max_output_tokens": 3000}])
+    Config(market=7, rules=memo,
+           agents=[{"kind": "llm", "reflect_max_output_tokens": 8192}])
+    # Scripted agents never write a note, so the floor does not apply to them.
+    Config(market=7, rules=memo, agents=[{"kind": "pi"}])
+    # And the note style keeps the 3,000 default.
+    Config(market=7, agents=[{"kind": "llm", "reflect_max_output_tokens": 3000}])

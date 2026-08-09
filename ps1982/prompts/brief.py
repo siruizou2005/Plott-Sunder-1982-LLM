@@ -109,7 +109,7 @@ def render_history(history: list[dict]) -> str:
     return "\n".join(rows)
 
 
-def render_reflections(notes: list[dict]) -> str:
+def render_reflections(notes: list[dict], memo: bool = False) -> str:
     """Your own past notes, split by kind and stamped with when you wrote them.
 
     Two things were wrong with pooling them into one undated list. The kinds compete for
@@ -117,12 +117,27 @@ def render_reflections(notes: list[dict]) -> str:
     learning node) behind a handful of post-trade jottings. And rendered as bare bullets,
     an agent cannot tell a snap note written seconds after a trade from a considered
     year-end summary, nor which year either came from.
+
+    Under `memo` the year-end block is one standing document rather than a list of dated
+    notes, so it gets its own heading and no year prefix: the memo is not "what I thought
+    in year 4", it is what the agent currently believes, and a prefix would invite it to
+    be read as stale. The post-trade block is unchanged either way — the memo tier is
+    about the year-end summary and nothing else.
     """
     year_end = [n for n in notes if n.get("kind") == "period_end"]
     trades = [n for n in notes if n.get("kind") != "period_end"]
     blocks = []
 
-    if year_end:
+    if memo:
+        if year_end:
+            latest = year_end[-1]
+            blocks.append(f"== YOUR MEMO ==\n"
+                          f"  This is your memo as you last wrote it, at the end of year "
+                          f"{latest['period']}.\n\n{latest['text'].strip()}")
+        else:
+            blocks.append("== YOUR MEMO ==\n"
+                          "  You have not written your memo yet; this is your first year.")
+    elif year_end:
         rows = ["== YOUR NOTES FROM PAST YEAR-ENDS =="]
         for n in year_end:
             rows.append(f"  (year {n['period']}) {n['text'].strip()}")
@@ -277,7 +292,8 @@ def _identity(seat: str, certs: int, cash: int, *, market, period: int,
 
 
 def _memory_blocks(*, reflections: list[dict], history: list[dict],
-                   not_selected: list[dict], names: Names = None) -> list[str]:
+                   not_selected: list[dict], names: Names = None,
+                   memo: bool = False) -> list[str]:
     """The private memory an agent carries, identical in every kind of call.
 
     Every call gets the same memory because a human subject's memory does not depend on
@@ -285,7 +301,7 @@ def _memory_blocks(*, reflections: list[dict], history: list[dict],
     drifting apart again.
     """
     return [b for b in (render_not_selected(not_selected, names),
-                        render_reflections(reflections),
+                        render_reflections(reflections, memo),
                         render_history(history)) if b]
 
 
@@ -302,7 +318,8 @@ def build_brief(*, market, seat: str, period: int, round_no: int, turn_seq: int,
         _constraints(seat, certs, cash, book),
         render_market_log(market_log, rules.market_log_window, names),
         *_memory_blocks(reflections=reflections, history=history,
-                        not_selected=not_selected, names=names),
+                        not_selected=not_selected, names=names,
+                        memo=rules.period_end_style == "memo"),
         "It is your turn. Choose your action and reply with the json object.",
     ]
     return "\n\n".join(blocks)
@@ -336,7 +353,8 @@ def build_broadcast_brief(*, market, seat: str, period: int, quote: dict, info: 
         render_book(book, rules, names),
         render_market_log(market_log, rules.market_log_window, names),
         *_memory_blocks(reflections=reflections, history=history,
-                        not_selected=not_selected, names=names),
+                        not_selected=not_selected, names=names,
+                        memo=rules.period_end_style == "memo"),
         "Do you accept? Reply with the json object.",
     ]
     return "\n\n".join(blocks)
@@ -363,7 +381,8 @@ def build_trade_feedback_brief(*, market, seat: str, period: int, round_no: int,
         render_book(book, rules, names),
         render_market_log(market_log, rules.market_log_window, names),
         *_memory_blocks(reflections=reflections, history=history,
-                        not_selected=not_selected, names=names),
+                        not_selected=not_selected, names=names,
+                        memo=rules.period_end_style == "memo"),
         "In one or two sentences, note why you made this trade and what you will watch "
         "for next.",
     ]
@@ -385,8 +404,29 @@ def build_period_end_brief(*, market, seat: str, period: int, state: str, certs:
         _identity(seat, certs, cash, market=market, period=period, names=names, with_cost=False),
         render_market_log(market_log, rules.market_log_window, names),
         *_memory_blocks(reflections=reflections, history=history,
-                        not_selected=not_selected, names=names),
-        "Write a note to yourself of about 100 words. What did the prices this year tell "
-        "you, or fail to tell you? What will you do differently next year?",
+                        not_selected=not_selected, names=names,
+                        memo=rules.period_end_style == "memo"),
+        _period_end_task(rules),
     ]
     return "\n\n".join(blocks)
+
+
+# The closing instruction of the year-end brief, which is also what tells a memo-style
+# agent that this is the rewrite occasion rather than the post-trade one — the shared
+# reflect system prompt describes both and defers to this line.
+_YEAR_END_NOTE_TASK = (
+    "Write a note to yourself of about 100 words. What did the prices this year tell "
+    "you, or fail to tell you? What will you do differently next year?")
+
+
+def _period_end_task(rules: Rules) -> str:
+    if rules.period_end_style != "memo":
+        return _YEAR_END_NOTE_TASK
+    lo, hi = rules.memo_words
+    return (
+        f"The market year has ended. Write your memo out again in full, between {lo} and "
+        f"{hi} words. Your previous memo is above; this replaces it completely, so carry "
+        f"forward everything still worth knowing, revise what this year changed, and drop "
+        f"what you now know to be wrong. Cover what you have worked out about this market "
+        f"so far, what the prices have told you and where you read them wrongly, the rules "
+        f"you now trade by, and what you are still unsure of.")
